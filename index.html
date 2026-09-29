@@ -4,98 +4,105 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Clark County Tax Auction Tracker</title>
-<meta name="description" content="Live dashboard of Clark County, Nevada delinquent real property tax auctions: schedule, results, excess proceeds and 14 years of trends. Updated automatically from the County Treasurer's site.">
+<meta name="description" content="Clark County, Nevada delinquent property tax auction results: winning bids, cost tiers, parcel types, locations, bidding wars and time in default. Updates automatically from county data.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <div class="eyebrow">Clark County, Nevada &middot; Delinquent Real Property Tax Auction</div>
-    <h1>Tax Auction Tracker</h1>
-    <p class="sub">Schedule, results, excess proceeds and long-run trends, pulled automatically from the
-      <a href="https://treasurer.clarkcountynv.gov/auction" target="_blank" rel="noopener">County Treasurer's auction site</a>.</p>
+    <div class="eyebrow">Clark County, Nevada &middot; Property Tax Auction</div>
+    <div class="titlerow">
+      <h1>Tax Auction Tracker</h1>
+      <label class="picker">Auction <select id="fAuction"></select></label>
+    </div>
     <div class="freshness" id="freshness">Loading data&hellip;</div>
+    <div class="next" id="next"></div>
   </div>
 </header>
 
 <main class="wrap">
-  <section id="banner" class="banner" aria-live="polite"></section>
+  <section class="kpis" id="kpis"></section>
 
-  <section>
-    <div class="section-head">
-      <h2 id="latestTitle">Latest auction</h2>
-      <p class="muted" id="latestSub"></p>
-    </div>
-    <div class="kpis" id="kpis"></div>
-  </section>
-
-  <section>
-    <div class="section-head"><h2>Key insights</h2><p class="muted">Recomputed from the data every time it updates.</p></div>
-    <ul class="insights" id="insights"></ul>
-  </section>
-
-  <section>
-    <div class="section-head"><h2>Excess proceeds claim windows</h2>
-      <p class="muted">When a parcel sells for more than the taxes and costs owed, the surplus is held for the former owner, who can claim it within 1 year after the deed is recorded (<a href="https://www.clarkcountynv.gov/government/elected_officials/county_treasurer/excess-proceeds-claim-instructions" target="_blank" rel="noopener">NRS 361.610</a>).</p></div>
-    <div id="claims" class="claims"></div>
-  </section>
-
-  <section>
-    <div class="section-head"><h2>Trends across every auction on record</h2></div>
+  <section class="card">
+    <div class="head"><h2>Cost tiers</h2><p>Parcels grouped by what was owed (the minimum bid), with the average winning bid in each tier.</p></div>
     <div class="grid2">
-      <figure class="card"><figcaption>Parcels sold per auction</figcaption><div class="chart"><canvas id="cCount"></canvas></div></figure>
-      <figure class="card"><figcaption>Minimum bids vs. winning bids (total $)</figcaption>
-        <div class="legend"><span><i class="sw s1"></i>Minimum bids</span><span><i class="sw s2"></i>Winning bids</span></div>
-        <div class="chart"><canvas id="cDollars"></canvas></div></figure>
-      <figure class="card"><figcaption>Median winning bid as a multiple of the minimum</figcaption><div class="chart"><canvas id="cMultiple"></canvas></div></figure>
-      <figure class="card"><figcaption>Share of parcels that sold at the minimum bid</figcaption><div class="chart"><canvas id="cAtMin"></canvas></div></figure>
+      <div class="chart"><canvas id="cTiers"></canvas></div>
+      <div class="tablewrap"><table class="data" id="tTiers"></table></div>
     </div>
+    <p class="takeaway" id="kTiers"></p>
   </section>
 
-  <section>
-    <div class="section-head"><h2 id="mixTitle">Inside the latest auction</h2></div>
+  <section class="card">
+    <div class="head"><h2>Parcel types</h2><p>What kind of property each parcel is, from the Assessor's land-use code.</p></div>
     <div class="grid2">
-      <figure class="card"><figcaption>Parcels by winning bid</figcaption><div class="chart"><canvas id="cBands"></canvas></div></figure>
-      <figure class="card"><figcaption>Addressed properties vs. parcels with no street address</figcaption>
-        <div id="split" class="split"></div></figure>
+      <div class="chart"><canvas id="cTypes"></canvas></div>
+      <div class="tablewrap"><table class="data" id="tTypes"></table></div>
     </div>
+    <p class="takeaway" id="kTypes"></p>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Location</h2><p>Where the parcels are and how location relates to price and competition. Dot size = winning bid.</p></div>
     <div class="grid2">
-      <figure class="card"><figcaption>Biggest bidding wars (winning bid &divide; minimum)</figcaption><div id="topPremium"></div></figure>
-      <figure class="card"><figcaption>Largest excess proceeds (owed to former owners)</figcaption><div id="topExcess"></div></figure>
+      <div>
+        <div id="map" class="map" role="img" aria-label="Map of auctioned parcels"></div>
+        <div class="legend"><span><i class="dot war"></i>Bidding war</span><span><i class="dot nowar"></i>Sold at minimum</span></div>
+      </div>
+      <div class="tablewrap tall"><table class="data" id="tAreas"></table></div>
+    </div>
+    <p class="takeaway" id="kAreas"></p>
+  </section>
+
+  <section class="card">
+    <div class="head"><h2>Bidding wars</h2><p>A bidding war is any parcel that sold above its minimum bid.</p></div>
+    <div class="grid2">
+      <div class="warstats" id="warStats"></div>
+      <div class="tablewrap"><table class="data" id="tWars"></table></div>
     </div>
   </section>
 
-  <section>
-    <div class="section-head"><h2>Auction schedule history</h2></div>
-    <div class="card"><div class="tablewrap"><table class="data" id="scheduleTable"></table></div>
-      <button id="scheduleToggle" type="button" class="linkbtn">Show all</button></div>
-  </section>
-
-  <section>
-    <div class="section-head"><h2>All parcels</h2></div>
-    <div class="filters">
-      <label>Auction <select id="fAuction"></select></label>
-      <label class="grow">Search <input id="fSearch" type="search" placeholder="Parcel, owner or address"></label>
-      <label>Type <select id="fType"><option value="all">All</option><option value="addr">Has street address</option><option value="vacant">No street address</option></select></label>
-      <button id="csvBtn" type="button">Download CSV</button>
+  <section class="card">
+    <div class="head"><h2>Time in default and unclaimed money</h2>
+      <p>County rules require taxes to go unpaid for at least <b>3 consecutive fiscal years</b> before a parcel can be sold (<a href="https://treasurer.co.clark.nv.us/trusfaq.htm" target="_blank" rel="noopener">Treasurer FAQ</a>). After that, title passes to the County Treasurer as trustee, and that date is on the Assessor's ownership record. <b>Estimated years unpaid = time held in trust + the 3 required years.</b></p></div>
+    <div class="grid2">
+      <div>
+        <h3 id="tenureTitle">Estimated years taxes went unpaid before the sale</h3>
+        <div class="chart short"><canvas id="cTenure"></canvas></div>
+      </div>
+      <div>
+        <h3>Excess proceeds waiting for former owners</h3>
+        <p class="small muted">Claims are allowed for 1 year after the deed is recorded (<a href="https://www.clarkcountynv.gov/government/elected_officials/county_treasurer/excess-proceeds-claim-instructions" target="_blank" rel="noopener">NRS 361.610</a>).</p>
+        <div class="tablewrap"><table class="data" id="tClaims"></table></div>
+      </div>
     </div>
-    <div class="card"><div class="tablewrap tall"><table class="data sortable" id="parcelTable"></table></div>
-      <p class="muted small" id="tableNote"></p></div>
+    <p class="takeaway" id="kTenure"></p>
   </section>
 
-  <section class="about">
-    <h2>About this data</h2>
-    <p>A scheduled job checks the <a href="https://treasurer.clarkcountynv.gov/auction" target="_blank" rel="noopener">Clark County Treasurer auction site</a> every 3 hours and republishes this page when anything changes. It reads the same data the county page loads, for every auction the county has on record. Parcel numbers link to the <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/" target="_blank" rel="noopener">Assessor's parcel detail</a>. Older printable results are on the county's <a href="https://www.clarkcountynv.gov/government/elected_officials/county_treasurer/real-property-tax-auction-information" target="_blank" rel="noopener">auction information page</a>.</p>
-    <p class="muted small">"No street address" means the county lists the location as unassigned, which usually indicates vacant land. Minimum bid is the opening bid set by the county (taxes, penalties and costs). Excess proceeds are as reported by the county. This dashboard is informational and is not affiliated with Clark County; confirm details with the <a href="https://www.clarkcountynv.gov/government/elected_officials/county_treasurer" target="_blank" rel="noopener">Treasurer's office</a> before relying on them.</p>
+  <section class="card">
+    <details>
+      <summary><h2>All parcels</h2><span class="muted small">Search, sort and download</span></summary>
+      <div class="filters">
+        <input id="fSearch" type="search" placeholder="Search parcel, owner, address or area">
+        <button id="csvBtn" type="button">Download CSV</button>
+      </div>
+      <div class="tablewrap tall"><table class="data sortable" id="parcelTable"></table></div>
+      <p class="muted small" id="tableNote"></p>
+    </details>
   </section>
+
+  <footer class="foot muted small">
+    Data: <a href="https://treasurer.clarkcountynv.gov/auction" target="_blank" rel="noopener">Clark County Treasurer auction site</a> (checked every 3 hours) and the
+    <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/" target="_blank" rel="noopener">Clark County Assessor</a> (parcel type, town, location, ownership history; current records, so older parcels may have changed since the sale).
+    Not affiliated with Clark County. <a href="https://github.com/ShamarRobinson/clark-county-tax-auction-dashboard" target="_blank" rel="noopener">Source on GitHub</a>.
+  </footer>
 </main>
 
-<footer class="wrap foot muted small">Source code and data history: <a id="repoLink" href="#" target="_blank" rel="noopener">GitHub</a></footer>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

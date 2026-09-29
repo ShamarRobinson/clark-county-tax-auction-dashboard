@@ -6,12 +6,14 @@ A live, auto-updating dashboard for the Clark County, Nevada **delinquent real p
 
 ## What it shows
 
-- **Upcoming auction banner** with date, sessions, location and parcel list as soon as the county posts them (or an estimate of the next sale based on history)
-- **Latest auction KPIs:** parcels sold, winning vs. minimum bids, amount bid up, excess proceeds, median bid multiple
-- **Auto-generated insights** (recomputed on every data update): bidding competition vs. history, addressed properties vs. vacant land, owner concentration, high-balance parcels, long-run totals
-- **Excess proceeds claim windows:** former owners can claim surplus within 1 year of deed recording ([NRS 361.610](https://www.clarkcountynv.gov/government/elected_officials/county_treasurer/excess-proceeds-claim-instructions)); the dashboard shows the dollar amount, deadline and days left
-- **Trends across every auction on record (2012 onward):** parcels sold, dollars, median bid multiple, share sold at the minimum
-- **Full parcel table** for any auction with search, filters, sorting, Assessor links and CSV download
+Pick any auction (or all of them since 2012) and see:
+
+- **Average winning bid**, parcels sold, total bids, bidding wars and excess proceeds
+- **Cost tiers:** parcels grouped by amount owed (minimum bid) with the average winning bid per tier
+- **Parcel types:** vacant land, single-family, condo/townhouse, manufactured, multi-family, commercial (Assessor land-use codes)
+- **Location:** map of every parcel plus average winning bid and bidding-war rate by area
+- **Bidding wars:** how many parcels sold above the minimum and the biggest jumps
+- **Time in default:** estimated years taxes went unpaid (county trustee date + the 3 years required first), how long former owners held the parcels, and how long excess proceeds have gone unclaimed
 
 ## How it stays current
 
@@ -22,6 +24,7 @@ GitHub Pages serves index.html ──> browser loads auctions.json and renders
                                    (open pages re-check for new data every 30 minutes)
 ```
 
+- `enrich.py` looks up each new parcel on the Clark County Assessor site (land use, town, coordinates, ownership history) and caches it in `parcels.json`.
 - `fetch_data.py` reads the auction id from the county page, then calls the same JSON endpoints the county page uses (`Event_Read`, `WinningBid_Read`, `ParcelNumberGroup_Read`) for every auction on record. Python standard library only.
 - `.github/workflows/update-data.yml` runs the script on a schedule and on demand (**Actions → Update auction data → Run workflow**). If the county site is down or returns nothing, the previous data is kept.
 - The page is plain HTML/CSS/JS with [Chart.js](https://www.chartjs.org/); no build step.
