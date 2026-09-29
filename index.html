@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clark County Tax Auction Tracker</title>
+<meta name="description" content="Live dashboard of Clark County, Nevada delinquent real property tax auctions: schedule, results, excess proceeds and 14 years of trends. Updated automatically from the County Treasurer's site.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow">Clark County, Nevada &middot; Delinquent Real Property Tax Auction</div>
+    <h1>Tax Auction Tracker</h1>
+    <p class="sub">Schedule, results, excess proceeds and long-run trends, pulled automatically from the
+      <a href="https://treasurer.clarkcountynv.gov/auction" target="_blank" rel="noopener">County Treasurer's auction site</a>.</p>
+    <div class="freshness" id="freshness">Loading data&hellip;</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="banner" class="banner" aria-live="polite"></section>
+
+  <section>
+    <div class="section-head">
+      <h2 id="latestTitle">Latest auction</h2>
+      <p class="muted" id="latestSub"></p>
+    </div>
+    <div class="kpis" id="kpis"></div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Key insights</h2><p class="muted">Recomputed from the data every time it updates.</p></div>
+    <ul class="insights" id="insights"></ul>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Excess proceeds claim windows</h2>
+      <p class="muted">When a parcel sells for more than the taxes and costs owed, the surplus is held for the former owner, who can claim it within 1 year after the deed is recorded (<a href="https://www.clarkcountynv.gov/government/elected_officials/county_treasurer/excess-proceeds-claim-instructions" target="_blank" rel="noopener">NRS 361.610</a>).</p></div>
+    <div id="claims" class="claims"></div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Trends across every auction on record</h2></div>
+    <div class="grid2">
+      <figure class="card"><figcaption>Parcels sold per auction</figcaption><div class="chart"><canvas id="cCount"></canvas></div></figure>
+      <figure class="card"><figcaption>Minimum bids vs. winning bids (total $)</figcaption>
+        <div class="legend"><span><i class="sw s1"></i>Minimum bids</span><span><i class="sw s2"></i>Winning bids</span></div>
+        <div class="chart"><canvas id="cDollars"></canvas></div></figure>
+      <figure class="card"><figcaption>Median winning bid as a multiple of the minimum</figcaption><div class="chart"><canvas id="cMultiple"></canvas></div></figure>
+      <figure class="card"><figcaption>Share of parcels that sold at the minimum bid</figcaption><div class="chart"><canvas id="cAtMin"></canvas></div></figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2 id="mixTitle">Inside the latest auction</h2></div>
+    <div class="grid2">
+      <figure class="card"><figcaption>Parcels by winning bid</figcaption><div class="chart"><canvas id="cBands"></canvas></div></figure>
+      <figure class="card"><figcaption>Addressed properties vs. parcels with no street address</figcaption>
+        <div id="split" class="split"></div></figure>
+    </div>
+    <div class="grid2">
+      <figure class="card"><figcaption>Biggest bidding wars (winning bid &divide; minimum)</figcaption><div id="topPremium"></div></figure>
+      <figure class="card"><figcaption>Largest excess proceeds (owed to former owners)</figcaption><div id="topExcess"></div></figure>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>Auction schedule history</h2></div>
+    <div class="card"><div class="tablewrap"><table class="data" id="scheduleTable"></table></div>
+      <button id="scheduleToggle" type="button" class="linkbtn">Show all</button></div>
+  </section>
+
+  <section>
+    <div class="section-head"><h2>All parcels</h2></div>
+    <div class="filters">
+      <label>Auction <select id="fAuction"></select></label>
+      <label class="grow">Search <input id="fSearch" type="search" placeholder="Parcel, owner or address"></label>
+      <label>Type <select id="fType"><option value="all">All</option><option value="addr">Has street address</option><option value="vacant">No street address</option></select></label>
+      <button id="csvBtn" type="button">Download CSV</button>
+    </div>
+    <div class="card"><div class="tablewrap tall"><table class="data sortable" id="parcelTable"></table></div>
+      <p class="muted small" id="tableNote"></p></div>
+  </section>
+
+  <section class="about">
+    <h2>About this data</h2>
+    <p>A scheduled job checks the <a href="https://treasurer.clarkcountynv.gov/auction" target="_blank" rel="noopener">Clark County Treasurer auction site</a> every 3 hours and republishes this page when anything changes. It reads the same data the county page loads, for every auction the county has on record. Parcel numbers link to the <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/" target="_blank" rel="noopener">Assessor's parcel detail</a>. Older printable results are on the county's <a href="https://www.clarkcountynv.gov/government/elected_officials/county_treasurer/real-property-tax-auction-information" target="_blank" rel="noopener">auction information page</a>.</p>
+    <p class="muted small">"No street address" means the county lists the location as unassigned, which usually indicates vacant land. Minimum bid is the opening bid set by the county (taxes, penalties and costs). Excess proceeds are as reported by the county. This dashboard is informational and is not affiliated with Clark County; confirm details with the <a href="https://www.clarkcountynv.gov/government/elected_officials/county_treasurer" target="_blank" rel="noopener">Treasurer's office</a> before relying on them.</p>
+  </section>
+</main>
+
+<footer class="wrap foot muted small">Source code and data history: <a id="repoLink" href="#" target="_blank" rel="noopener">GitHub</a></footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
