@@ -82,3 +82,25 @@ button { cursor: pointer; font-weight: 600; }
 .foot { margin-top: 22px; line-height: 1.6; }
 .leaflet-container { font: inherit; }
 @media (max-width: 560px) { h1 { font-size: 25px; } .kpi .value { font-size: 22px; } .map { height: 280px; } }
+.searchbox { margin-top: 12px; }
+.searchbox input { width: 100%; font-size: 16px; padding: 11px 14px; min-height: 46px; border-radius: 10px; border: 1px solid var(--border); }
+.searchbox input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.examples { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; font-size: 12.5px; color: var(--text-3); }
+.examples button { font-size: 12.5px; font-weight: 500; min-height: 0; padding: 3px 9px; border-radius: 99px; color: var(--text-2); }
+.searchhelp { margin-top: 8px; font-size: 13px; color: var(--text-2); line-height: 1.7; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: color-mix(in srgb, var(--accent) 9%, transparent); padding: 1px 5px; border-radius: 4px; }
+.results { border-color: var(--accent); }
+.reshead { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+.reshead h2 { flex: 1 1 auto; }
+#resTable tbody tr, #parcelTable tbody tr { cursor: pointer; }
+.detail { border: 1px solid var(--border); border-radius: 14px; padding: 0; max-width: 720px; width: calc(100% - 32px); background: var(--surface); color: var(--text); }
+.detail::backdrop { background: rgba(0,0,0,.45); }
+#detailBody { padding: 18px 20px 6px; max-height: 75vh; overflow: auto; }
+#detailBody h2 { margin-bottom: 2px; }
+.dgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2px 22px; margin-top: 12px; }
+.dgrid div { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 13.5px; }
+.dgrid span:first-child { color: var(--text-2); }
+.dgrid span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.dlinks { display: flex; flex-wrap: wrap; gap: 14px; margin: 14px 0 4px; font-size: 13.5px; }
+.detail form { padding: 10px 20px 16px; text-align: right; }
+mark { background: color-mix(in srgb, #eda100 35%, transparent); color: inherit; border-radius: 2px; }

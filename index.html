@@ -20,11 +20,24 @@
       <label class="picker">Auction <select id="fAuction"></select></label>
     </div>
     <div class="freshness" id="freshness">Loading data&hellip;</div>
+    <div class="searchbox">
+      <input id="gSearch" type="search" autocomplete="off" placeholder="Search every auction: parcel number, owner, address, area, type, amount..." aria-label="Search all parcels">
+      <div class="examples">Try: <button type="button" data-q="138-10-510-001">138-10-510-001</button><button type="button" data-q="henderson condo">henderson condo</button><button type="button" data-q="won>100000 year:2025">won&gt;100000 year:2025</button><button type="button" data-q="type:vacant area:moapa">type:vacant area:moapa</button><button type="button" id="searchHelpBtn">How search works</button></div>
+      <div class="searchhelp" id="searchHelp" hidden>
+        Type words to match any field (all words must match). Parcel numbers work with or without dashes. Narrow to a field with <code>field:text</code> and compare numbers with <code>&gt;</code>, <code>&lt;</code> or <code>=</code>.<br>
+        Fields: <code>parcel</code> <code>owner</code> <code>address</code> <code>area</code> <code>type</code> <code>landuse</code> <code>year</code> <code>date</code> <code>owed</code> <code>won</code> <code>multiple</code> <code>excess</code> <code>acres</code> <code>built</code> <code>value</code> <code>sqft</code> <code>unpaid</code> <code>held</code> <code>war:yes</code> <code>war:no</code>
+      </div>
+    </div>
     <div class="next" id="next"></div>
   </div>
 </header>
 
 <main class="wrap">
+  <section class="card results" id="results" hidden>
+    <div class="reshead"><h2 id="resTitle">Search results</h2><button type="button" id="resCsv">Download results</button><button type="button" id="resClear">Clear</button></div>
+    <div class="tablewrap tall"><table class="data sortable" id="resTable"></table></div>
+    <p class="muted small" id="resNote"></p>
+  </section>
   <section class="kpis" id="kpis"></section>
 
   <section class="card">
@@ -101,6 +114,7 @@
   </footer>
 </main>
 
+<dialog id="detail" class="detail"><div id="detailBody"></div><form method="dialog"><button class="closebtn" aria-label="Close">Close</button></form></dialog>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="app.js"></script>

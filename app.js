@@ -50,7 +50,7 @@
           sold: p.winningBid > 0, war: p.winningBid > p.minBid + 0.01,
           multiple: p.winningBid && p.minBid ? p.winningBid / p.minBid : null,
           type: i.landUse ? typeOf(i.landUse) : "Other or unknown", landUse: i.landUse || "",
-          area: i.area || "Unknown", lat: i.lat, lon: i.lon, acres: i.acres, taxable: i.taxable, tenure, inTrust,
+          area: i.area || "Unknown", town: i.town || "", lat: i.lat, lon: i.lon, acres: i.acres, taxable: i.taxable, yearBuilt: i.yearBuilt, sqft: i.sqft, taxDistrict: i.taxDistrict, tenure, inTrust,
           trustDate: trust ? trust.date : null, defaultYrs: inTrust != null ? inTrust + 3 : null,
         });
       });
@@ -225,6 +225,7 @@
   function drawTable() {
     const rows = rowsNow();
     $("parcelTable").innerHTML = `<thead><tr>${COLS.map((c) => `<th data-k="${c[0]}" class="${c[3] === "num" ? "num" : ""}"${sortKey === c[0] ? ` aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}>${c[1]}</th>`).join("")}</tr></thead><tbody>${rows.map((p) => `<tr>${COLS.map((c) => `<td class="${c[3] || ""}">${c[2](p)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+    $("parcelTable").querySelectorAll("tbody tr").forEach((tr, i) => tr.addEventListener("click", (e) => { if (e.target.tagName !== "A") showDetail(rows[i]); }));
     $("parcelTable").querySelectorAll("th").forEach((th) => th.addEventListener("click", () => { const k = th.dataset.k; dir = sortKey === k ? -dir : -1; sortKey = k; drawTable(); }));
     $("tableNote").textContent = `${rows.length} parcels shown. "Yrs unpaid (est.)" = time the county held the parcel in trust plus the 3 years of delinquency required first. "Owner held" = how long the former owner owned it.`;
   }
@@ -236,6 +237,116 @@
     a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
     a.download = "clark-county-tax-auction-parcels.csv"; document.body.appendChild(a); a.click(); a.remove();
   }
+
+
+  /* ---------- global search (all auctions, all fields) ---------- */
+  const FIELDS = {
+    parcel: (p) => p.apn + " " + p.apn.replace(/\D/g, ""), apn: (p) => p.apn + " " + p.apn.replace(/\D/g, ""),
+    owner: (p) => p.owner, address: (p) => p.location, location: (p) => p.location, area: (p) => p.area + " " + p.town, town: (p) => p.area + " " + p.town,
+    type: (p) => p.type, landuse: (p) => p.landUse, date: (p) => fmtDate(p.auctionDate, { month: "long" }) + " " + (p.auctionDate || "").slice(0, 10),
+    auction: (p) => fmtDate(p.auctionDate, { month: "long" }), district: (p) => p.taxDistrict, war: (p) => p.war ? "yes" : "no",
+  };
+  const NUMS = {
+    year: (p) => p.auctionDate ? toDate(p.auctionDate).getFullYear() : null, owed: (p) => p.minBid, min: (p) => p.minBid, minbid: (p) => p.minBid,
+    won: (p) => p.winningBid, bid: (p) => p.winningBid, winning: (p) => p.winningBid, multiple: (p) => p.multiple, excess: (p) => p.excess,
+    acres: (p) => p.acres, built: (p) => p.yearBuilt, value: (p) => p.taxable, sqft: (p) => p.sqft, unpaid: (p) => p.defaultYrs, held: (p) => p.tenure,
+  };
+  function haystack(p) {
+    if (!p._hay) p._hay = [p.apn, p.apn.replace(/\D/g, ""), p.owner, p.location, p.area, p.town, p.type, p.landUse, p.taxDistrict ? "district " + p.taxDistrict : "",
+      fmtDate(p.auctionDate, { month: "long" }), (p.auctionDate || "").slice(0, 10), p.deedRecorded, p.trustDate, p.group ? "group " + p.group : "",
+      p.personalPropertyExcluded ? "personal property excluded" : "", p.war ? "bidding war" : "sold at minimum",
+      p.minBid, Math.round(p.minBid || 0), p.winningBid, p.excess, p.yearBuilt].filter((x) => x != null && x !== "").join(" | ").toLowerCase();
+    return p._hay;
+  }
+  function parseQuery(q) {
+    const tokens = q.toLowerCase().match(/"[^"]+"|\S+/g) || [];
+    return tokens.map((t) => {
+      t = t.replace(/"/g, "");
+      let m = t.match(/^([a-z]+)(>=|<=|>|<|=)([\d.,$k]+)$/);
+      if (m && NUMS[m[1]]) { let v = m[3].replace(/[$,]/g, ""); v = /k$/.test(v) ? parseFloat(v) * 1000 : parseFloat(v); return { num: NUMS[m[1]], op: m[2], v }; }
+      m = t.match(/^([a-z]+):(.+)$/);
+      if (m && (FIELDS[m[1]] || NUMS[m[1]])) return FIELDS[m[1]] ? { field: FIELDS[m[1]], text: m[2] } : { num: NUMS[m[1]], op: "=", v: parseFloat(m[2]) };
+      const digits = t.replace(/\D/g, "");
+      return { text: t, digits: /^\d{3}-?\d{2}/.test(t) ? digits : null };
+    });
+  }
+  function matches(p, terms) {
+    return terms.every((c) => {
+      if (c.num) { const x = c.num(p); if (x == null || isNaN(x)) return false; return c.op === ">" ? x > c.v : c.op === "<" ? x < c.v : c.op === ">=" ? x >= c.v : c.op === "<=" ? x <= c.v : Math.abs(x - c.v) < (c.v >= 1000 ? 1 : 0.05); }
+      if (c.field) return String(c.field(p) || "").toLowerCase().includes(c.text);
+      if (c.digits) return p.apn.replace(/\D/g, "").includes(c.digits);
+      return haystack(p).includes(c.text);
+    });
+  }
+  let resRows = [], resSort = "auctionDate", resDir = -1;
+  const hl = (text, words) => { let h = esc(text); words.forEach((w) => { if (w.length > 1) h = h.replace(new RegExp("(" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "ig"), "<mark>$1</mark>"); }); return h; };
+  function runSearch() {
+    const q = $("gSearch").value.trim();
+    if (!q) { $("results").hidden = true; return; }
+    const terms = parseQuery(q), words = terms.filter((t) => t.text && !t.field).map((t) => t.text);
+    resRows = AUCTIONS.flatMap((a) => a.parcels).filter((p) => matches(p, terms));
+    resRows.sort((a, b) => { const x = a[resSort], y = b[resSort]; return (typeof x === "number" || typeof y === "number" ? (x || 0) - (y || 0) : String(x || "").localeCompare(String(y || ""))) * resDir; });
+    const sold = resRows.filter((p) => p.sold);
+    $("results").hidden = false;
+    $("resTitle").textContent = resRows.length ? `${resRows.length.toLocaleString()} result${resRows.length === 1 ? "" : "s"} for "${q}"` : `No results for "${q}"`;
+    const shown = resRows.slice(0, 300);
+    const cols = [["apn", "Parcel"], ["auctionDate", "Auction"], ["owner", "Former owner"], ["location", "Address"], ["area", "Area"], ["type", "Type"], ["minBid", "Owed", 1], ["winningBid", "Won", 1], ["multiple", "Multiple", 1]];
+    $("resTable").innerHTML = `<thead><tr>${cols.map((c) => `<th data-k="${c[0]}" class="${c[2] ? "num" : ""}"${resSort === c[0] ? ` aria-sort="${resDir > 0 ? "ascending" : "descending"}"` : ""}>${c[1]}</th>`).join("")}</tr></thead><tbody>` +
+      shown.map((p, i) => `<tr data-i="${i}"><td>${hl(p.apn, words.concat(terms.filter((t) => t.digits).map((t) => t.text)))}</td><td>${fmtDate(p.auctionDate, { month: "short" })}</td><td class="wrap">${hl(p.owner, words)}</td><td class="wrap">${hl(p.location, words)}</td><td>${hl(p.area, words)}</td><td>${hl(p.type, words)}</td><td class="num">${money(p.minBid)}</td><td class="num">${p.sold ? money(p.winningBid) : "Pending"}</td><td class="num">${p.multiple ? p.multiple.toFixed(1) + "x" : ""}</td></tr>`).join("") + "</tbody>";
+    $("resTable").querySelectorAll("th").forEach((th) => th.addEventListener("click", () => { const k = th.dataset.k; resDir = resSort === k ? -resDir : -1; resSort = k; runSearch(); }));
+    $("resTable").querySelectorAll("tbody tr").forEach((tr) => tr.addEventListener("click", () => showDetail(shown[+tr.dataset.i])));
+    $("resNote").innerHTML = resRows.length ? `Average winning bid for these results: <b>${money(avg(sold.map((p) => p.winningBid)))}</b> across ${sold.length} sold parcel${sold.length === 1 ? "" : "s"}. ${resRows.length > 300 ? "Showing the first 300; download for all. " : ""}Click any row for full details.` : "Check the spelling, or try fewer words.";
+  }
+  function showDetail(p) {
+    const row = (l, v) => v == null || v === "" ? "" : `<div><span>${l}</span><span>${v}</span></div>`;
+    const digits = p.apn.replace(/\D/g, "");
+    $("detailBody").innerHTML = `<h2>${esc(p.apn)}</h2><div class="muted">${esc(p.location)}${p.area ? " &middot; " + esc(p.area) : ""}</div>
+      <div class="dgrid">
+        ${row("Auction", fmtDate(p.auctionDate, { weekday: "short", month: "long" }))}
+        ${row("Deed recorded", p.deedRecorded ? fmtDate(p.deedRecorded) : "")}
+        ${row("Amount owed (minimum bid)", money(p.minBid))}
+        ${row("Winning bid", p.sold ? money(p.winningBid) : "Pending")}
+        ${row("Multiple of amount owed", p.multiple ? p.multiple.toFixed(2) + "x" : "")}
+        ${row("Bidding war", p.sold ? (p.war ? "Yes" : "No, sold at minimum") : "")}
+        ${row("Excess proceeds", p.excess ? money(p.excess) : "")}
+        ${row("Former owner", esc(p.owner))}
+        ${row("Parcel type", esc(p.type))}
+        ${row("Assessor land use", esc(p.landUse))}
+        ${row("Lot size", p.acres ? p.acres + " acres" : "")}
+        ${row("Year built", p.yearBuilt || "")}
+        ${row("Living area", p.sqft ? p.sqft.toLocaleString() + " sq ft" : "")}
+        ${row("Assessor taxable value (current)", p.taxable ? money(p.taxable) : "")}
+        ${row("Tax district", esc(p.taxDistrict))}
+        ${row("County took title in trust", p.trustDate ? fmtDate(p.trustDate) : "")}
+        ${row("Estimated years unpaid", p.defaultYrs != null ? p.defaultYrs.toFixed(1) + " yrs" : "3+ yrs")}
+        ${row("Former owner held it", p.tenure != null ? p.tenure.toFixed(1) + " yrs" : "")}
+        ${row("Personal property", p.personalPropertyExcluded ? "Not included in sale" : "")}
+        ${row("Sold as group", esc(p.group || ""))}
+      </div>
+      <div class="dlinks">
+        <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/parceldetail.aspx?hdnParcel=${digits}" target="_blank" rel="noopener">Assessor record</a>
+        <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/ParcelHistory.aspx?instance=pcl2&parcel=${digits}" target="_blank" rel="noopener">Ownership history</a>
+        ${p.lat ? `<a href="https://www.google.com/maps?q=${p.lat},${p.lon}" target="_blank" rel="noopener">Google Maps</a>` : ""}
+        <a href="https://treasurer.clarkcountynv.gov/auction" target="_blank" rel="noopener">County auction site</a>
+      </div>`;
+    $("detail").showModal();
+  }
+  function resultsCsv() {
+    const head = ["auction_date", "parcel", "former_owner", "address", "area", "type", "land_use", "owed_min_bid", "winning_bid", "multiple", "excess_proceeds", "acres", "year_built", "taxable_value", "est_years_unpaid", "owner_held_years"];
+    const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+    const lines = [head.join(",")].concat(resRows.map((p) => [(p.auctionDate || "").slice(0, 10), p.apn, p.owner, p.location, p.area, p.type, p.landUse, p.minBid, p.winningBid, p.multiple ? p.multiple.toFixed(2) : "", p.excess, p.acres, p.yearBuilt, p.taxable, p.defaultYrs != null ? p.defaultYrs.toFixed(1) : "", p.tenure != null ? p.tenure.toFixed(1) : ""].map(q).join(",")));
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    a.download = "tax-auction-search-results.csv"; document.body.appendChild(a); a.click(); a.remove();
+  }
+  let searchTimer;
+  $("gSearch").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 150); });
+  $("gSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") { runSearch(); $("results").scrollIntoView({ behavior: "smooth", block: "start" }); } });
+  document.querySelectorAll(".examples button[data-q]").forEach((b) => b.addEventListener("click", () => { $("gSearch").value = b.dataset.q; runSearch(); }));
+  $("searchHelpBtn").addEventListener("click", () => { $("searchHelp").hidden = !$("searchHelp").hidden; });
+  $("resClear").addEventListener("click", () => { $("gSearch").value = ""; runSearch(); $("gSearch").focus(); });
+  $("resCsv").addEventListener("click", resultsCsv);
+  $("detail").addEventListener("click", (e) => { if (e.target === $("detail")) $("detail").close(); });
+  try { const q0 = new URLSearchParams(location.search).get("q"); if (q0) $("gSearch").value = q0; } catch (e) { /* ignore */ }
 
   /* ---------- load ---------- */
   async function load() {
@@ -256,6 +367,7 @@
         : `<b>No upcoming auction posted yet.</b> The last one was ${fmtDate(last.date, { month: "long" })}; recent auctions have been held each May. This page updates as soon as the county posts a date.`;
       charts.forEach((c) => c.destroy()); charts = [];
       render();
+      if ($("gSearch").value.trim()) runSearch();
     } catch (e) { $("freshness").textContent = "Could not load data. Please refresh."; console.error(e); }
   }
   $("fAuction").addEventListener("change", () => { charts.forEach((c) => c.destroy()); charts = []; render(); });
