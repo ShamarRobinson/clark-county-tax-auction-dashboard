@@ -95,6 +95,14 @@
     <p class="takeaway" id="kTenure"></p>
   </section>
 
+  <section class="card" id="lookup">
+    <div class="head"><h2>Parcel location lookup</h2>
+      <p>The correct address or location for each parcel, with a direct link to the parcel on the <a href="https://maps.clarkcountynv.gov/openweb/" target="_blank" rel="noopener">Clark County OpenWeb map</a>. Many auction listings say "unassigned situs"; where the Assessor has no site address, the nearest street from the county's address locator is shown instead.</p></div>
+    <div class="filters"><input id="lSearch" type="search" placeholder="Parcel number, street, area or owner (searches all auctions)"></div>
+    <div class="tablewrap tall"><table class="data" id="tLookup"></table></div>
+    <p class="muted small" id="lNote"></p>
+  </section>
+
   <section class="card">
     <details>
       <summary><h2>All parcels</h2><span class="muted small">Search, sort and download</span></summary>
@@ -108,7 +116,7 @@
   </section>
 
   <footer class="foot muted small">
-    Data: <a href="https://treasurer.clarkcountynv.gov/auction" target="_blank" rel="noopener">Clark County Treasurer auction site</a> (checked every 3 hours) and the
+    Data: <a href="https://treasurer.clarkcountynv.gov/auction" target="_blank" rel="noopener">Clark County Treasurer auction site</a> (checked weekly) and the
     <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/" target="_blank" rel="noopener">Clark County Assessor</a> (parcel type, town, location, ownership history; current records, so older parcels may have changed since the sale).
     Not affiliated with Clark County. <a href="https://github.com/ShamarRobinson/clark-county-tax-auction-dashboard" target="_blank" rel="noopener">Source on GitHub</a>.
   </footer>

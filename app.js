@@ -50,7 +50,7 @@
           sold: p.winningBid > 0, war: p.winningBid > p.minBid + 0.01,
           multiple: p.winningBid && p.minBid ? p.winningBid / p.minBid : null,
           type: i.landUse ? typeOf(i.landUse) : "Other or unknown", landUse: i.landUse || "",
-          area: i.area || "Unknown", town: i.town || "", lat: i.lat, lon: i.lon, acres: i.acres, taxable: i.taxable, yearBuilt: i.yearBuilt, sqft: i.sqft, taxDistrict: i.taxDistrict, tenure, inTrust,
+          area: i.area || "Unknown", town: i.town || "", address: i.address || "", addressExact: !!i.addressExact, legal: i.legal || "", lat: i.lat, lon: i.lon, acres: i.acres, taxable: i.taxable, yearBuilt: i.yearBuilt, sqft: i.sqft, taxDistrict: i.taxDistrict, tenure, inTrust,
           trustDate: trust ? trust.date : null, defaultYrs: inTrust != null ? inTrust + 3 : null,
         });
       });
@@ -75,18 +75,15 @@
     renderAreas(sold);
     renderWars(sold);
     renderTenure(S, sold);
+    renderLookup();
     drawTable();
   }
 
   function renderKpis(S, sold) {
-    const wars = sold.filter((p) => p.war);
     const k = (label, value, note, hero) => `<div class="kpi${hero ? " hero" : ""}"><div class="label">${label}</div><div class="value">${value}</div><div class="note">${note || ""}</div></div>`;
     $("kpis").innerHTML = [
       k("Average winning bid", money(avg(sold.map((p) => p.winningBid))), "Median " + money(med(sold.map((p) => p.winningBid))), true),
       k("Parcels sold", sold.length.toLocaleString(), S.all ? `${S.auctions.length} auctions` : ""),
-      k("Total winning bids", short(sum(sold.map((p) => p.winningBid))), "vs. " + short(sum(sold.map((p) => p.minBid))) + " owed"),
-      k("Bidding wars", `${wars.length} (${pct(wars.length / sold.length)})`, "sold above the minimum"),
-      k("Excess proceeds", short(sum(sold.map((p) => p.excess))), "held for former owners"),
     ].join("");
   }
 
@@ -239,10 +236,29 @@
   }
 
 
+
+  /* ---------- parcel location lookup ---------- */
+  const openWeb = (p) => "https://maps.clarkcountynv.gov/openweb/?@" + p.apn.replace(/\D/g, "");
+  const gmaps = (p) => p.lat ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((p.address || p.location) + " Clark County NV")}`;
+  function renderLookup() {
+    const q = $("lSearch").value.trim().toLowerCase();
+    const base = q ? AUCTIONS.flatMap((a) => a.parcels) : selected().parcels;
+    const rows = base.filter((p) => !q || [p.apn, p.apn.replace(/\D/g, ""), p.location, p.address, p.area, p.owner, p.legal].join(" ").toLowerCase().includes(q.replace(/^(\d{3})-?(\d{2})-?(\d{3})-?(\d{3})$/, "$1-$2-$3-$4")))
+      .sort((a, b) => (b.auctionDate || "").localeCompare(a.auctionDate || "") || a.apn.localeCompare(b.apn)).slice(0, 400);
+    $("tLookup").innerHTML = `<thead><tr><th>Parcel</th><th>Auction</th><th>Listed at auction</th><th>Correct address or location</th><th>Area</th><th>Open in</th></tr></thead><tbody>` +
+      rows.map((p) => `<tr><td><a href="${openWeb(p)}" target="_blank" rel="noopener">${esc(p.apn)}</a></td><td>${fmtDate(p.auctionDate, { month: "short", day: undefined })}</td>
+        <td class="wrap muted">${esc(p.location || "")}</td>
+        <td class="wrap">${esc(p.address || "Not available")} ${p.address ? (p.addressExact ? '<span class="pill ok">Site address</span>' : '<span class="pill">Approximate</span>') : ""}</td>
+        <td>${esc(p.area)}</td>
+        <td class="links"><a href="${openWeb(p)}" target="_blank" rel="noopener">County map</a> &middot; <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/parceldetail.aspx?hdnParcel=${p.apn.replace(/\D/g, "")}" target="_blank" rel="noopener">Assessor</a> &middot; <a href="${gmaps(p)}" target="_blank" rel="noopener">Google Maps</a></td></tr>`).join("") + "</tbody>";
+    const exact = rows.filter((p) => p.addressExact).length;
+    $("lNote").textContent = rows.length ? `${rows.length} parcel${rows.length === 1 ? "" : "s"} ${q ? "matching your search across all auctions" : "in " + selected().label}. ${exact} have a site address on file with the Assessor; the rest show the nearest street from the county's address locator.` : "No parcels match. Try a parcel number like 138-10-510-001 or part of a street name.";
+  }
+
   /* ---------- global search (all auctions, all fields) ---------- */
   const FIELDS = {
     parcel: (p) => p.apn + " " + p.apn.replace(/\D/g, ""), apn: (p) => p.apn + " " + p.apn.replace(/\D/g, ""),
-    owner: (p) => p.owner, address: (p) => p.location, location: (p) => p.location, area: (p) => p.area + " " + p.town, town: (p) => p.area + " " + p.town,
+    owner: (p) => p.owner, address: (p) => p.location + " " + p.address, location: (p) => p.location + " " + p.address, area: (p) => p.area + " " + p.town, town: (p) => p.area + " " + p.town,
     type: (p) => p.type, landuse: (p) => p.landUse, date: (p) => fmtDate(p.auctionDate, { month: "long" }) + " " + (p.auctionDate || "").slice(0, 10),
     auction: (p) => fmtDate(p.auctionDate, { month: "long" }), district: (p) => p.taxDistrict, war: (p) => p.war ? "yes" : "no",
   };
@@ -252,7 +268,7 @@
     acres: (p) => p.acres, built: (p) => p.yearBuilt, value: (p) => p.taxable, sqft: (p) => p.sqft, unpaid: (p) => p.defaultYrs, held: (p) => p.tenure,
   };
   function haystack(p) {
-    if (!p._hay) p._hay = [p.apn, p.apn.replace(/\D/g, ""), p.owner, p.location, p.area, p.town, p.type, p.landUse, p.taxDistrict ? "district " + p.taxDistrict : "",
+    if (!p._hay) p._hay = [p.apn, p.apn.replace(/\D/g, ""), p.owner, p.location, p.address, p.legal, p.area, p.town, p.type, p.landUse, p.taxDistrict ? "district " + p.taxDistrict : "",
       fmtDate(p.auctionDate, { month: "long" }), (p.auctionDate || "").slice(0, 10), p.deedRecorded, p.trustDate, p.group ? "group " + p.group : "",
       p.personalPropertyExcluded ? "personal property excluded" : "", p.war ? "bidding war" : "sold at minimum",
       p.minBid, Math.round(p.minBid || 0), p.winningBid, p.excess, p.yearBuilt].filter((x) => x != null && x !== "").join(" | ").toLowerCase();
@@ -300,7 +316,7 @@
   function showDetail(p) {
     const row = (l, v) => v == null || v === "" ? "" : `<div><span>${l}</span><span>${v}</span></div>`;
     const digits = p.apn.replace(/\D/g, "");
-    $("detailBody").innerHTML = `<h2>${esc(p.apn)}</h2><div class="muted">${esc(p.location)}${p.area ? " &middot; " + esc(p.area) : ""}</div>
+    $("detailBody").innerHTML = `<h2>${esc(p.apn)}</h2><div class="muted">${esc(p.address || p.location)}${p.address && !p.addressExact ? " (approximate)" : ""}</div>
       <div class="dgrid">
         ${row("Auction", fmtDate(p.auctionDate, { weekday: "short", month: "long" }))}
         ${row("Deed recorded", p.deedRecorded ? fmtDate(p.deedRecorded) : "")}
@@ -309,6 +325,9 @@
         ${row("Multiple of amount owed", p.multiple ? p.multiple.toFixed(2) + "x" : "")}
         ${row("Bidding war", p.sold ? (p.war ? "Yes" : "No, sold at minimum") : "")}
         ${row("Excess proceeds", p.excess ? money(p.excess) : "")}
+        ${row("Address listed at auction", esc(p.location))}
+        ${row("Legal description", esc(p.legal))}
+        ${row("Coordinates", p.lat ? p.lat.toFixed(5) + ", " + p.lon.toFixed(5) : "")}
         ${row("Former owner", esc(p.owner))}
         ${row("Parcel type", esc(p.type))}
         ${row("Assessor land use", esc(p.landUse))}
@@ -324,6 +343,7 @@
         ${row("Sold as group", esc(p.group || ""))}
       </div>
       <div class="dlinks">
+        <a href="${openWeb(p)}" target="_blank" rel="noopener"><b>County OpenWeb map</b></a>
         <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/parceldetail.aspx?hdnParcel=${digits}" target="_blank" rel="noopener">Assessor record</a>
         <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/ParcelHistory.aspx?instance=pcl2&parcel=${digits}" target="_blank" rel="noopener">Ownership history</a>
         ${p.lat ? `<a href="https://www.google.com/maps?q=${p.lat},${p.lon}" target="_blank" rel="noopener">Google Maps</a>` : ""}
@@ -373,6 +393,7 @@
   $("fAuction").addEventListener("change", () => { charts.forEach((c) => c.destroy()); charts = []; render(); });
   $("fSearch").addEventListener("input", drawTable);
   $("csvBtn").addEventListener("click", csv);
+  $("lSearch").addEventListener("input", () => { if (AUCTIONS.length) renderLookup(); });
   load();
   setInterval(load, 30 * 60 * 1000);
 })();

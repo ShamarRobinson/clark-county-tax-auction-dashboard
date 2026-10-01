@@ -12,13 +12,14 @@ Pick any auction (or all of them since 2012) and see:
 - **Cost tiers:** parcels grouped by amount owed (minimum bid) with the average winning bid per tier
 - **Parcel types:** vacant land, single-family, condo/townhouse, manufactured, multi-family, commercial (Assessor land-use codes)
 - **Location:** map of every parcel plus average winning bid and bidding-war rate by area
+- **Parcel location lookup:** the correct site address (or nearest street for unaddressed land) for every parcel, linked straight to the county's OpenWeb map
 - **Bidding wars:** how many parcels sold above the minimum and the biggest jumps
 - **Time in default:** estimated years taxes went unpaid (county trustee date + the 3 years required first), how long former owners held the parcels, and how long excess proceeds have gone unclaimed
 
 ## How it stays current
 
 ```
-County Treasurer site ──(every 3 hours)──> GitHub Action runs fetch_data.py
+County Treasurer site ──(weekly)──> GitHub Action runs fetch_data.py
                                              └─ writes auctions.json, commits it
 GitHub Pages serves index.html ──> browser loads auctions.json and renders
                                    (open pages re-check for new data every 30 minutes)
@@ -26,8 +27,12 @@ GitHub Pages serves index.html ──> browser loads auctions.json and renders
 
 - `enrich.py` looks up each new parcel on the Clark County Assessor site (land use, town, coordinates, ownership history) and caches it in `parcels.json`.
 - `fetch_data.py` reads the auction id from the county page, then calls the same JSON endpoints the county page uses (`Event_Read`, `WinningBid_Read`, `ParcelNumberGroup_Read`) for every auction on record. Python standard library only.
-- `.github/workflows/update-data.yml` runs the script on a schedule and on demand (**Actions → Update auction data → Run workflow**). If the county site is down or returns nothing, the previous data is kept.
+- `.github/workflows/update-data.yml` runs weekly (Mondays) and on demand (**Actions → Update auction data → Run workflow**). If the county site is down or returns nothing, the previous data is kept.
 - The page is plain HTML/CSS/JS with [Chart.js](https://www.chartjs.org/); no build step.
+
+## Auction alerts
+
+`notify.py` runs after each weekly refresh. When the county posts an upcoming auction date it emails an announcement, then one reminder per week until the sale. Recipients and the sending account are stored only as encrypted repository secrets (`ALERT_TO`, `SMTP_USER`, `SMTP_PASS`, optional `SMTP_HOST` / `SMTP_PORT`), never in the code. To test: **Actions > Update auction data > Run workflow**, check "Send a test alert email".
 
 ## Run locally
 

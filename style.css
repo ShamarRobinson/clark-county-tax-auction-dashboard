@@ -104,3 +104,6 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
 .dlinks { display: flex; flex-wrap: wrap; gap: 14px; margin: 14px 0 4px; font-size: 13.5px; }
 .detail form { padding: 10px 20px 16px; text-align: right; }
 mark { background: color-mix(in srgb, #eda100 35%, transparent); color: inherit; border-radius: 2px; }
+.pill.ok { border-color: color-mix(in srgb, #1baf7a 60%, transparent); color: #0f7a3d; }
+td.links { white-space: nowrap; font-size: 13px; }
+.kpis { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }

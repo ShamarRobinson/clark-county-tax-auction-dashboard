@@ -68,6 +68,8 @@ def lookup(apn):
         return None
     rec = {
         "town": span(page, "lblTown").title(),
+        "situs": re.sub(r"\s+", " ", span(page, "lblLocation")),
+        "legal": " ".join(x for x in (span(page, "lblDesc%d" % k) for k in range(1, 4)) if x),
         "landUse": span(page, "lblLandUse"),
         "acres": num(span(page, "lblAcres")),
         "yearBuilt": num(span(page, "lblConstrYr")),
@@ -132,18 +134,72 @@ def add_area(cache):
             v["area"] = "Unknown"
 
 
+LOCATOR = "https://maps.clarkcountynv.gov/arcgis/rest/services/Locators/CC_MultiRole_pro/GeocodeServer/reverseGeocode?"
+
+
+def has_street_number(s):
+    return bool(re.match(r"^\s*\d*[1-9]\d*\s+\S", s or ""))
+
+
+def add_location(cache):
+    """Fill in a usable address: the Assessor's site address when it has one, otherwise the
+    nearest street block from the county's reverse geocoder (marked approximate)."""
+    def nearest(v):
+        loc = json.dumps({"x": v["lon"], "y": v["lat"], "spatialReference": {"wkid": 4326}})
+        q = urllib.parse.urlencode({"location": loc, "distance": 8000, "featureTypes": "StreetAddress", "outSR": 4326, "f": "json"})
+        try:
+            d = json.loads(get(LOCATOR + q, tries=2) or "{}")
+        except ValueError:
+            return None
+        a, l = d.get("address") or {}, d.get("location") or {}
+        if not a.get("Match_addr"):
+            return None
+        dist_ft = None
+        if l.get("x") is not None:
+            import math
+            dy = (l["y"] - v["lat"]) * 364000
+            dx = (l["x"] - v["lon"]) * 364000 * math.cos(math.radians(v["lat"]))
+            dist_ft = int(round((dx * dx + dy * dy) ** 0.5, -1))
+        return {"street": a["Match_addr"], "ft": dist_ft}
+
+    todo = [k for k, v in cache.items() if "address" not in v]
+    def work(k):
+        v = cache[k]
+        place = v.get("area") or v.get("town") or "Clark County"
+        if has_street_number(v.get("situs")):
+            return k, {"address": f"{v['situs'].title()}, {v.get('town') or place}, NV", "addressExact": True}
+        if v.get("lat"):
+            n = nearest(v)
+            if n:
+                near = f"Near {n['street']}, {place}, NV" + (f" (about {n['ft']:,} ft away)" if n.get("ft") else "")
+                return k, {"address": near, "addressExact": False}
+        if v.get("lat"):
+            import math
+            name, (cla, clo) = min(COMMUNITIES.items(), key=lambda kv: (kv[1][0] - v["lat"]) ** 2 + ((kv[1][1] - v["lon"]) * 0.81) ** 2)
+            dy, dx = v["lat"] - cla, (v["lon"] - clo) * 0.81
+            miles = ((dx * dx + dy * dy) ** 0.5) * 69
+            compass = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][int(((math.degrees(math.atan2(dx, dy)) + 360 + 22.5) % 360) // 45)]
+            return k, {"address": f"Rural land about {miles:.1f} mi {compass} of {name}, NV ({v['lat']:.5f}, {v['lon']:.5f})", "addressExact": False}
+        return k, {"address": f"No street address, {place}, NV", "addressExact": False}
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        for k, upd in ex.map(work, todo):
+            cache[k].update(upd)
+
+
 def main():
     data = json.loads(AUCTIONS.read_text())
     cache = json.loads(CACHE.read_text()) if CACHE.exists() else {}
     apns = sorted({p["apn"] for a in data["auctions"] for p in a["parcels"] if p.get("apn")})
-    todo = [a for a in apns if a not in cache]
+    todo = [a for a in apns if a not in cache or "situs" not in cache[a]]
     print(f"{len(apns)} parcels, {len(todo)} to look up")
     with ThreadPoolExecutor(max_workers=4) as ex:
         for apn, rec in zip(todo, ex.map(lookup, todo)):
             if rec:
-                cache[apn] = rec
+                keep = {k: cache.get(apn, {}).get(k) for k in ("lat", "lon") if cache.get(apn, {}).get(k) is not None}
+                cache[apn] = {**rec, **keep}
     add_geo(cache)
     add_area(cache)
+    add_location(cache)
     CACHE.write_text(json.dumps(dict(sorted(cache.items())), indent=0))
     print(f"cached {len(cache)} parcels")
 
