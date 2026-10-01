@@ -3,8 +3,8 @@
 
 Runs after each weekly data refresh. When the county has posted an upcoming
 auction date, it emails the recipients stored in repository secrets: the first
-email announces the auction, and every weekly run after that sends a reminder
-until the auction date passes.
+email announces the auction, and every weekly run after that sends the current
+date and time of the auction until it passes. Nothing else is emailed.
 
 Configuration comes only from environment variables (GitHub Actions secrets):
   ALERT_TO     comma-separated recipient list
@@ -48,27 +48,22 @@ def upcoming_auctions(data, now):
 
 
 def build(a, starts, now, first):
+    """Only the auction date and session times: an announcement, then weekly date/time updates."""
     first_day = starts[0].astimezone(PT)
     days = max(0, (first_day - now).days)
     when = first_day.strftime("%A, %B %-d, %Y")
-    parcels = a.get("parcels", [])
-    owed = sum(p.get("minBid") or 0 for p in parcels)
     sessions = "\n".join(
-        f"  Session {e.get('no')}: {parse(e.get('start')).astimezone(PT).strftime('%B %-d at %-I:%M %p')} PT, {e.get('address') or 'location TBA'}"
+        f"  {parse(e.get('start')).astimezone(PT).strftime('%A, %B %-d, %Y at %-I:%M %p')} Pacific"
         for e in a.get("events", []) if parse(e.get("start")))
     subject = (f"Clark County tax auction announced: {when}" if first
-               else f"Reminder: Clark County tax auction in {days} days ({when})")
-    body = f"""{'A new' if first else 'Weekly reminder: the'} Clark County delinquent property tax auction is scheduled for {when} ({days} days from now).
+               else f"Weekly update: Clark County tax auction on {when} ({days} days)")
+    body = f"""{'The Clark County tax auction has been announced.' if first else 'Weekly update on the Clark County tax auction.'}
 
+Date: {when} ({days} days from now)
+Time:
 {sessions}
 
-Parcels currently listed: {len(parcels) if parcels else 'not posted yet'}{f' (combined minimum bids about ${owed:,.0f})' if parcels else ''}
-Parcels can drop off the list before the sale if owners pay what they owe.
-
-Dashboard: {DASHBOARD}
-County auction site (registration and rules): {COUNTY}
-
-You will get one reminder a week until the auction date.
+County auction site: {COUNTY}
 """
     return subject, body
 

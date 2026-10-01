@@ -41,7 +41,7 @@
   <section class="kpis" id="kpis"></section>
 
   <section class="card">
-    <div class="head"><h2>Cost tiers</h2><p>Parcels grouped by what was owed (the minimum bid), with the average winning bid in each tier.</p></div>
+    <div class="head"><h2>Cost tiers</h2><p>Parcels grouped by what was owed (the minimum bid), with the average winning bid in each tier. The chart uses a log scale so small and large tiers are both readable.</p></div>
     <div class="grid2">
       <div class="chart"><canvas id="cTiers"></canvas></div>
       <div class="tablewrap"><table class="data" id="tTiers"></table></div>
@@ -59,13 +59,16 @@
   </section>
 
   <section class="card">
-    <div class="head"><h2>Location</h2><p>Where the parcels are and how location relates to price and competition. Dot size = winning bid.</p></div>
+    <div class="head"><h2>Location</h2><p>Where the parcels are and how location relates to price and competition. Dot size = winning bid. Click an area in the table to outline it on the map.</p></div>
     <div class="grid2">
       <div>
         <div id="map" class="map" role="img" aria-label="Map of auctioned parcels"></div>
-        <div class="legend"><span><i class="dot war"></i>Bidding war</span><span><i class="dot nowar"></i>Sold at minimum</span></div>
+        <div class="legend"><span><i class="dot war"></i>Bidding war</span><span><i class="dot nowar"></i>Sold at minimum</span><span><i class="dot sel"></i>Selected area</span></div>
       </div>
-      <div class="tablewrap tall"><table class="data" id="tAreas"></table></div>
+      <div>
+        <div class="areabar"><span class="small muted" id="areaNote">Click an area to highlight it on the map.</span><button type="button" id="areaClear" hidden>Show all areas</button></div>
+        <div class="tablewrap tall"><table class="data" id="tAreas"></table></div>
+      </div>
     </div>
     <p class="takeaway" id="kAreas"></p>
   </section>
@@ -95,23 +98,34 @@
     <p class="takeaway" id="kTenure"></p>
   </section>
 
-  <section class="card" id="lookup">
-    <div class="head"><h2>Parcel location lookup</h2>
-      <p>The correct address or location for each parcel, with a direct link to the parcel on the <a href="https://maps.clarkcountynv.gov/openweb/" target="_blank" rel="noopener">Clark County OpenWeb map</a>. Many auction listings say "unassigned situs"; where the Assessor has no site address, the nearest street from the county's address locator is shown instead.</p></div>
-    <div class="filters"><input id="lSearch" type="search" placeholder="Parcel number, street, area or owner (searches all auctions)"></div>
-    <div class="tablewrap tall"><table class="data" id="tLookup"></table></div>
-    <p class="muted small" id="lNote"></p>
-  </section>
-
-  <section class="card">
-    <details>
-      <summary><h2>All parcels</h2><span class="muted small">Search, sort and download</span></summary>
-      <div class="filters">
-        <input id="fSearch" type="search" placeholder="Search parcel, owner, address or area">
-        <button id="csvBtn" type="button">Download CSV</button>
-      </div>
-      <div class="tablewrap tall"><table class="data sortable" id="parcelTable"></table></div>
-      <p class="muted small" id="tableNote"></p>
+  <section class="card" id="parcels">
+    <div class="head"><h2>All parcels</h2>
+      <p>Every parcel for the auction picked at the top, with its correct address or location and a direct link to it on the <a href="https://maps.clarkcountynv.gov/openweb/" target="_blank" rel="noopener">Clark County OpenWeb map</a>. Where the Assessor has no site address, the nearest street (or distance from the nearest town) is shown and marked approximate. Drag column headers to reorder them, use <b>Columns</b> to show, hide or pivot them, and <b>Pivot by</b> to summarize the grid by any column (numbers are grouped into ranges). Click a pivot row to see those parcels. Click a row for full details.</p></div>
+    <div class="filters gridbar">
+      <input id="fSearch" type="search" placeholder="Search parcel, address, area, type or owner">
+      <label class="inline">Pivot by <select id="pivotBy">
+        <option value="">None (show parcels)</option>
+        <option value="dealRating">Deal rating</option><option value="type">Parcel type</option><option value="area">Area</option>
+        <option value="status">Status</option><option value="year">Auction year</option><option value="tier">Cost tier</option>
+        <option value="priorLabel">Prior auctions</option><option value="addrKind">Address type</option><option value="warLabel">Bidding war</option>
+      </select></label>
+      <div class="colmenu"><button type="button" id="colBtn">Columns</button><div class="colpanel" id="colPanel" hidden></div></div>
+      <button type="button" id="resetCols">Reset layout</button>
+      <button id="csvBtn" type="button">Download CSV</button>
+    </div>
+    <div class="chipbar" id="pivotFilter" hidden></div>
+    <div class="tablewrap tall"><table class="data sortable" id="parcelTable"></table></div>
+    <p class="muted small" id="tableNote"></p>
+    <details class="scorehelp"><summary>How the deal score works</summary>
+      <p>A 0 to 100 screening score, built for buy-and-hold and value-add investors (rentals, BRRRR, small multifamily). It is a starting point for research, not an appraisal or advice.</p>
+      <ul>
+        <li><b>Value vs. price (up to 45 points):</b> the Assessor's taxable value compared with the winning bid (or the amount owed if not sold). Uses today's Assessor value, so older sales look better than they did on auction day.</li>
+        <li><b>Property type (up to 20):</b> small multifamily and single-family homes score highest, then condos and townhouses, manufactured homes, commercial, and vacant land.</li>
+        <li><b>Location (up to 15):</b> Las Vegas Valley areas score higher than outlying areas.</li>
+        <li><b>Data and title signals (up to 10):</b> a confirmed site address and a built structure add points; personal property not included and group sales subtract.</li>
+        <li><b>Competition (up to 10):</b> sold close to the amount owed scores higher than a heavy bidding war.</li>
+      </ul>
+      <p>Ratings: 70+ Strong, 50 to 69 Good, 35 to 49 Fair, under 35 Weak.</p>
     </details>
   </section>
 

@@ -15,7 +15,7 @@
   const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
   const apnLink = (apn) => `<a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/parceldetail.aspx?hdnParcel=${apn.replace(/\D/g, "")}" target="_blank" rel="noopener">${esc(apn)}</a>`;
 
-  const TIERS = [[0, 2500, "Under $2.5K"], [2500, 10000, "$2.5K to $10K"], [10000, 50000, "$10K to $50K"], [50000, 150000, "$50K to $150K"], [150000, Infinity, "$150K and up"]];
+  const TIERS = [[0, 1500, "Under $1.5K"], [1500, 3000, "$1.5K to $3K"], [3000, 7500, "$3K to $7.5K"], [7500, 15000, "$7.5K to $15K"], [15000, 40000, "$15K to $40K"], [40000, 100000, "$40K to $100K"], [100000, Infinity, "$100K and up"]];
   const TYPES = ["Vacant land", "Single-family home", "Condo or townhouse", "Manufactured home", "Multi-family (2 to 4 units)", "Commercial or industrial", "Other or unknown"];
   function typeOf(lu) {
     const code = parseFloat(lu);
@@ -57,6 +57,15 @@
       const upcoming = a.events.some((e) => e.start && toDate(e.start) > Date.now() - DAY / 2);
       return { id: a.id, date, events: a.events, parcels, upcoming, deed: parcels.map((p) => p.deedRecorded).filter(Boolean).sort()[0] };
     }).filter((a) => a.date).sort((x, y) => x.date.localeCompare(y.date));
+    // prior appearances, status and deal score
+    const seen = {};
+    AUCTIONS.forEach((a) => a.parcels.forEach((p) => {
+      p.priorAuctions = (seen[p.apn] || []).length;
+      p.priorDates = (seen[p.apn] || []).slice();
+      (seen[p.apn] = seen[p.apn] || []).push(fmtDate(a.date, { month: "short", day: undefined }));
+      p.status = p.sold ? "Sold" : (a.upcoming ? "Upcoming" : "Not sold");
+      Object.assign(p, dealScore(p));
+    }));
   }
 
   function selected() {
@@ -75,16 +84,29 @@
     renderAreas(sold);
     renderWars(sold);
     renderTenure(S, sold);
-    renderLookup();
-    drawTable();
+      drawTable();
   }
 
   function renderKpis(S, sold) {
     const k = (label, value, note, hero) => `<div class="kpi${hero ? " hero" : ""}"><div class="label">${label}</div><div class="value">${value}</div><div class="note">${note || ""}</div></div>`;
+    const bids = sold.map((p) => p.winningBid).filter((v) => v > 0);
+    if (!bids.length) { $("kpis").innerHTML = k("Parcels sold", "0", ""); return; }
+    const lo = sold.reduce((a, p) => (p.winningBid > 0 && (!a || p.winningBid < a.winningBid) ? p : a), null);
+    const hi = sold.reduce((a, p) => (!a || p.winningBid > a.winningBid ? p : a), null);
+    const modeOf = (vals) => { const m = new Map(); vals.forEach((v) => m.set(v, (m.get(v) || 0) + 1)); return [...m].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]; };
+    let [mv, mc] = modeOf(bids), mnote;
+    if (mc > 1) mnote = `${mc} parcels sold for exactly this`;
+    else { [mv, mc] = modeOf(bids.map((v) => Math.round(v / 500) * 500)); mnote = mc > 1 ? `About this (nearest $500): ${mc} parcels` : "Every bid was different"; }
+    const who = (p) => `<a href="#" data-apn="${esc(p.apn)}" class="kpilink">${esc(p.apn)}</a>${p.area && p.area !== "Unknown" ? ", " + esc(p.area) : ""}`;
     $("kpis").innerHTML = [
-      k("Average winning bid", money(avg(sold.map((p) => p.winningBid))), "Median " + money(med(sold.map((p) => p.winningBid))), true),
       k("Parcels sold", sold.length.toLocaleString(), S.all ? `${S.auctions.length} auctions` : ""),
+      k("Average winning bid", money(avg(bids)), "Mean of all winning bids", true),
+      k("Median winning bid", money(med(bids)), "Half sold above, half below"),
+      k("Lowest winning bid", money(lo.winningBid), who(lo)),
+      k("Highest winning bid", money(hi.winningBid), who(hi)),
+      k("Most frequent bid", money(mv), mnote),
     ].join("");
+    $("kpis").querySelectorAll(".kpilink").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); const p = sold.find((x) => x.apn === a.dataset.apn); if (p) showDetail(p); }));
   }
 
   /* ---------- charts ---------- */
@@ -112,14 +134,16 @@
   }
   function statTable(id, rows, first) {
     $(id).innerHTML = `<thead><tr><th>${first}</th><th class="num">Parcels</th><th class="num">Avg owed</th><th class="num">Avg winning bid</th><th class="num">Median multiple</th><th class="num">Bidding wars</th></tr></thead><tbody>` +
-      rows.map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${r.n}</td><td class="num">${money(r.avgMin)}</td><td class="num"><b>${money(r.avgWin)}</b></td><td class="num">${r.mult ? r.mult.toFixed(1) + "x" : ""}</td><td class="num">${pct(r.war)}</td></tr>`).join("") + "</tbody>";
+      rows.map((r) => `<tr class="arearow" tabindex="0" data-area="${esc(r.name)}" title="Click to highlight on the map"><td><span class="areaname">${esc(r.name)}</span></td><td class="num">${r.n}</td><td class="num">${money(r.avgMin)}</td><td class="num"><b>${money(r.avgWin)}</b></td><td class="num">${r.mult ? r.mult.toFixed(1) + "x" : ""}</td><td class="num">${pct(r.war)}</td></tr>`).join("") + "</tbody>";
   }
 
   function renderTiers(sold) {
     const rows = groupRows(sold, (p) => (TIERS.find((t) => p.minBid >= t[0] && p.minBid < t[1]) || TIERS[0])[2], TIERS.map((t) => t[2]));
     statTable("tTiers", rows, "Amount owed");
     chart("cTiers", { type: "bar", data: { labels: rows.map((r) => r.name), datasets: [bar("Average owed", rows.map((r) => r.avgMin), cssVar("--s1")), bar("Average winning bid", rows.map((r) => r.avgWin), cssVar("--s2"))] },
-      options: Object.assign(barOpts(short), { plugins: Object.assign(barOpts(short).plugins, { legend: { display: true, labels: { boxWidth: 10, color: cssVar("--text-2") } } }) }) });
+      options: (() => { const o = Object.assign(barOpts(short), { plugins: Object.assign(barOpts(short).plugins, { legend: { display: true, labels: { boxWidth: 10, color: cssVar("--text-2") } } }) });
+        o.scales = Object.assign({}, o.scales, { y: Object.assign({}, o.scales && o.scales.y, { type: "logarithmic", ticks: Object.assign({}, o.scales && o.scales.y && o.scales.y.ticks, { callback: (v) => [1000, 10000, 100000, 1000000].includes(v) ? short(v) : "" }) }) });
+        return o; })() });
     const withN = rows.filter((r) => r.n >= 2);
     const hot = withN.slice().sort((a, b) => b.mult - a.mult)[0], cold = withN.slice().sort((a, b) => a.war - b.war)[0];
     $("kTiers").innerHTML = hot && cold && hot !== cold ? `Parcels owing <b>${hot.name}</b> saw the strongest bidding, selling for a median <b>${hot.mult.toFixed(1)}x</b> what was owed (average winning bid ${money(hot.avgWin)}). Parcels owing <b>${cold.name}</b> drew the least competition: ${pct(cold.war)} had bidding wars and they sold for a median ${cold.mult.toFixed(1)}x.` : "";
@@ -136,7 +160,7 @@
   function renderAreas(sold) {
     const rows = groupRows(sold, (p) => p.area);
     $("tAreas").innerHTML = `<thead><tr><th>Area</th><th class="num">Parcels</th><th class="num">Avg winning bid</th><th class="num">Median multiple</th><th class="num">Bidding wars</th></tr></thead><tbody>` +
-      rows.map((r) => `<tr><td>${esc(r.name)}</td><td class="num">${r.n}</td><td class="num"><b>${money(r.avgWin)}</b></td><td class="num">${r.mult ? r.mult.toFixed(1) + "x" : ""}</td><td class="num">${pct(r.war)}</td></tr>`).join("") + "</tbody>";
+      rows.map((r) => `<tr class="arearow" tabindex="0" data-area="${esc(r.name)}" title="Click to highlight on the map"><td><span class="areaname">${esc(r.name)}</span></td><td class="num">${r.n}</td><td class="num"><b>${money(r.avgWin)}</b></td><td class="num">${r.mult ? r.mult.toFixed(1) + "x" : ""}</td><td class="num">${pct(r.war)}</td></tr>`).join("") + "</tbody>";
     // Valley vs outlying comparison
     const VALLEY = ["Las Vegas", "North Las Vegas", "Henderson", "Paradise", "Sunrise Manor", "Spring Valley", "Enterprise", "Winchester", "Whitney", "Summerlin"];
     const inV = sold.filter((p) => VALLEY.includes(p.area)), out = sold.filter((p) => !VALLEY.includes(p.area) && p.area !== "Unknown");
@@ -147,6 +171,54 @@
     }
     else $("kAreas").textContent = "";
     drawMap(sold);
+    selArea = null;
+    $("tAreas").querySelectorAll("tr.arearow").forEach((tr) => {
+      const go = () => highlightArea(selArea === tr.dataset.area ? null : tr.dataset.area);
+      tr.addEventListener("click", go);
+      tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    });
+    $("areaClear").onclick = () => highlightArea(null);
+  }
+
+  let selArea = null, areaShape = null, markerList = [], allBounds = null;
+  function hull(pts) {
+    const P = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if (P.length < 3) return P;
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const p of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+    for (const p of P.slice().reverse()) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    return lo.slice(0, -1).concat(up.slice(0, -1));
+  }
+  function highlightArea(name) {
+    selArea = name;
+    $("tAreas").querySelectorAll("tr.arearow").forEach((tr) => tr.classList.toggle("sel", tr.dataset.area === name));
+    $("areaClear").hidden = !name;
+    $("areaNote").innerHTML = name ? `Showing <b>${esc(name)}</b> on the map.` : "Click an area to highlight it on the map.";
+    if (!map) return;
+    if (areaShape) { areaShape.remove(); areaShape = null; }
+    const accent = cssVar("--s3");
+    markerList.forEach(({ m, p }) => {
+      const on = !name || p.area === name;
+      m.setStyle({ fillOpacity: on ? 0.9 : 0.12, opacity: on ? 1 : 0.2, color: name && on ? cssVar("--text") : cssVar("--surface"), weight: name && on ? 1.5 : 1 });
+      if (name && on) m.bringToFront();
+    });
+    if (!name) { if (allBounds) map.fitBounds(allBounds); return; }
+    const pts = markerList.filter(({ p }) => p.area === name).map(({ p }) => [p.lat, p.lon]);
+    if (!pts.length) return;
+    const style = { color: accent, weight: 2, dashArray: "6 4", fillColor: accent, fillOpacity: 0.14, interactive: false };
+    const h = hull(pts);
+    if (h.length >= 3) {
+      const c = [avg(h.map((x) => x[0])), avg(h.map((x) => x[1]))];
+      areaShape = L.polygon(h.map(([la, lo]) => [c[0] + (la - c[0]) * 1.15 + Math.sign(la - c[0]) * 0.004, c[1] + (lo - c[1]) * 1.15 + Math.sign(lo - c[1]) * 0.005]), style).addTo(map);
+    } else {
+      const c = [avg(pts.map((x) => x[0])), avg(pts.map((x) => x[1]))];
+      const r = Math.max(700, ...pts.map((x) => map.distance(c, x) + 500));
+      areaShape = L.circle(c, Object.assign({ radius: r }, style)).addTo(map);
+    }
+    areaShape.bringToBack();
+    map.fitBounds(areaShape.getBounds().pad(0.25), { maxZoom: 15 });
+    document.getElementById("map").scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
 
   function drawMap(sold) {
@@ -159,12 +231,16 @@
     layer = L.layerGroup().addTo(map);
     const pts = sold.filter((p) => p.lat);
     const maxW = Math.max(...pts.map((p) => p.winningBid), 1);
+    if (areaShape) { areaShape.remove(); areaShape = null; }
+    markerList = [];
     pts.forEach((p) => {
-      L.circleMarker([p.lat, p.lon], { radius: 4 + 12 * Math.sqrt(p.winningBid / maxW), color: cssVar("--surface"), weight: 1, fillColor: p.war ? cssVar("--s2") : cssVar("--s1"), fillOpacity: 0.85 })
+      const m = L.circleMarker([p.lat, p.lon], { radius: 4 + 12 * Math.sqrt(p.winningBid / maxW), color: cssVar("--surface"), weight: 1, fillColor: p.war ? cssVar("--s2") : cssVar("--s1"), fillOpacity: 0.85 })
         .bindPopup(`<b>${esc(p.apn)}</b><br>${esc(p.location)}<br>${esc(p.type)} &middot; ${esc(p.area)}<br>Owed ${money(p.minBid)}, won ${money(p.winningBid)}${p.war ? ` (${p.multiple.toFixed(1)}x)` : ""}<br>${fmtDate(p.auctionDate)}`)
         .addTo(layer);
+      markerList.push({ m, p });
     });
-    if (pts.length) map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(0.1));
+    allBounds = pts.length ? L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(0.1) : null;
+    if (allBounds) map.fitBounds(allBounds);
   }
 
   function renderWars(sold) {
@@ -205,54 +281,190 @@
       : `Every parcel went at least <b>3 years</b> with unpaid taxes before it could be sold. Since about 2017 the county no longer records its trustee date on the Assessor's ownership history, so a longer estimate isn't possible for this auction (see earlier auctions or \"All auctions\", where the median was about ${med(AUCTIONS.flatMap((a) => a.parcels).map((p) => p.defaultYrs).filter((x) => x != null)).toFixed(1)} years).${t.length ? ` Former owners had held the median parcel for <b>${med(t).toFixed(0)} years</b> before the sale, and ${pct(long / t.length)} for 20+ years.` : ""}`;
   }
 
-  /* ---------- parcel table ---------- */
-  let sortKey = "winningBid", dir = -1;
-  const COLS = [
-    ["apn", "Parcel", (p) => apnLink(p.apn)], ["auctionDate", "Auction", (p) => fmtDate(p.auctionDate, { month: "short", day: undefined })],
-    ["type", "Type", (p) => esc(p.type)], ["area", "Area", (p) => esc(p.area)], ["location", "Address", (p) => esc(p.location), "wrap"],
-    ["minBid", "Owed", (p) => money(p.minBid), "num"], ["winningBid", "Won", (p) => p.sold ? money(p.winningBid) : "Pending", "num"],
-    ["multiple", "Multiple", (p) => p.multiple ? p.multiple.toFixed(1) + "x" : "", "num"], ["defaultYrs", "Yrs unpaid (est.)", (p) => p.defaultYrs != null ? p.defaultYrs.toFixed(1) : "", "num"], ["tenure", "Owner held", (p) => p.tenure != null ? Math.round(p.tenure) + " yrs" : "", "num"],
-    ["excess", "Excess", (p) => p.excess ? money(p.excess) : "", "num"],
-  ];
-  function rowsNow() {
-    const q = $("fSearch").value.trim().toLowerCase();
-    return selected().parcels.filter((p) => !q || [p.apn, p.owner, p.location, p.area, p.type].join(" ").toLowerCase().includes(q))
-      .sort((a, b) => { const x = a[sortKey], y = b[sortKey]; return (typeof x === "number" || typeof y === "number" ? (x || 0) - (y || 0) : String(x || "").localeCompare(String(y || ""))) * dir; });
-  }
-  function drawTable() {
-    const rows = rowsNow();
-    $("parcelTable").innerHTML = `<thead><tr>${COLS.map((c) => `<th data-k="${c[0]}" class="${c[3] === "num" ? "num" : ""}"${sortKey === c[0] ? ` aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}>${c[1]}</th>`).join("")}</tr></thead><tbody>${rows.map((p) => `<tr>${COLS.map((c) => `<td class="${c[3] || ""}">${c[2](p)}</td>`).join("")}</tr>`).join("")}</tbody>`;
-    $("parcelTable").querySelectorAll("tbody tr").forEach((tr, i) => tr.addEventListener("click", (e) => { if (e.target.tagName !== "A") showDetail(rows[i]); }));
-    $("parcelTable").querySelectorAll("th").forEach((th) => th.addEventListener("click", () => { const k = th.dataset.k; dir = sortKey === k ? -dir : -1; sortKey = k; drawTable(); }));
-    $("tableNote").textContent = `${rows.length} parcels shown. "Yrs unpaid (est.)" = time the county held the parcel in trust plus the 3 years of delinquency required first. "Owner held" = how long the former owner owned it.`;
-  }
-  function csv() {
-    const head = ["auction_date", "parcel", "type", "land_use", "area", "address", "former_owner", "owed_min_bid", "winning_bid", "multiple", "est_years_unpaid", "county_trustee_date", "owner_held_years", "excess_proceeds", "lat", "lon"];
-    const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
-    const lines = [head.join(",")].concat(rowsNow().map((p) => [(p.auctionDate || "").slice(0, 10), p.apn, p.type, p.landUse, p.area, p.location, p.owner, p.minBid, p.winningBid, p.multiple ? p.multiple.toFixed(2) : "", p.defaultYrs != null ? p.defaultYrs.toFixed(1) : "", p.trustDate || "", p.tenure != null ? p.tenure.toFixed(1) : "", p.excess, p.lat, p.lon].map(q).join(",")));
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
-    a.download = "clark-county-tax-auction-parcels.csv"; document.body.appendChild(a); a.click(); a.remove();
+  /* ---------- deal score ---------- */
+  const VALLEY_AREAS = ["Las Vegas", "North Las Vegas", "Henderson", "Paradise", "Sunrise Manor", "Spring Valley", "Enterprise", "Winchester", "Whitney", "Summerlin"];
+  const clamp = (x) => Math.max(0, Math.min(1, x));
+  function dealScore(p) {
+    const price = p.sold ? p.winningBid : p.minBid;
+    const ratio = p.taxable && price ? p.taxable / price : null;
+    const value = ratio == null ? 0.25 : clamp((ratio - 0.5) / 2.5);
+    const typePts = { "Multi-family (2 to 4 units)": 1, "Single-family home": 0.95, "Condo or townhouse": 0.8, "Manufactured home": 0.55, "Commercial or industrial": 0.5, "Vacant land": 0.3, "Other or unknown": 0.25 }[p.type] ?? 0.25;
+    const loc = VALLEY_AREAS.includes(p.area) ? 1 : (p.area === "Unknown" ? 0.3 : 0.4);
+    let sig = 0.5 + (p.addressExact ? 0.25 : 0) + (p.yearBuilt ? 0.25 : 0) - (p.personalPropertyExcluded ? 0.25 : 0) - (p.group ? 0.25 : 0);
+    sig = clamp(sig);
+    const comp = p.multiple == null ? 0.5 : clamp(1 - (p.multiple - 1) / 9);
+    const parts = { value: Math.round(45 * value), type: Math.round(20 * typePts), location: Math.round(15 * loc), signals: Math.round(10 * sig), competition: Math.round(10 * comp) };
+    const score = parts.value + parts.type + parts.location + parts.signals + parts.competition;
+    const dealRating = score >= 70 ? "Strong" : score >= 50 ? "Good" : score >= 35 ? "Fair" : "Weak";
+    return { dealScore: score, dealParts: parts, dealRating, valueRatio: ratio };
   }
 
-
-
-  /* ---------- parcel location lookup ---------- */
+  /* ---------- combined parcel grid (rows, column chooser, drag reorder, pivot) ---------- */
   const openWeb = (p) => "https://maps.clarkcountynv.gov/openweb/?@" + p.apn.replace(/\D/g, "");
   const gmaps = (p) => p.lat ? `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((p.address || p.location) + " Clark County NV")}`;
-  function renderLookup() {
-    const q = $("lSearch").value.trim().toLowerCase();
-    const base = q ? AUCTIONS.flatMap((a) => a.parcels) : selected().parcels;
-    const rows = base.filter((p) => !q || [p.apn, p.apn.replace(/\D/g, ""), p.location, p.address, p.area, p.owner, p.legal].join(" ").toLowerCase().includes(q.replace(/^(\d{3})-?(\d{2})-?(\d{3})-?(\d{3})$/, "$1-$2-$3-$4")))
-      .sort((a, b) => (b.auctionDate || "").localeCompare(a.auctionDate || "") || a.apn.localeCompare(b.apn)).slice(0, 400);
-    $("tLookup").innerHTML = `<thead><tr><th>Parcel</th><th>Auction</th><th>Listed at auction</th><th>Correct address or location</th><th>Area</th><th>Open in</th></tr></thead><tbody>` +
-      rows.map((p) => `<tr><td><a href="${openWeb(p)}" target="_blank" rel="noopener">${esc(p.apn)}</a></td><td>${fmtDate(p.auctionDate, { month: "short", day: undefined })}</td>
-        <td class="wrap muted">${esc(p.location || "")}</td>
-        <td class="wrap">${esc(p.address || "Not available")} ${p.address ? (p.addressExact ? '<span class="pill ok">Site address</span>' : '<span class="pill">Approximate</span>') : ""}</td>
-        <td>${esc(p.area)}</td>
-        <td class="links"><a href="${openWeb(p)}" target="_blank" rel="noopener">County map</a> &middot; <a href="https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/parceldetail.aspx?hdnParcel=${p.apn.replace(/\D/g, "")}" target="_blank" rel="noopener">Assessor</a> &middot; <a href="${gmaps(p)}" target="_blank" rel="noopener">Google Maps</a></td></tr>`).join("") + "</tbody>";
-    const exact = rows.filter((p) => p.addressExact).length;
-    $("lNote").textContent = rows.length ? `${rows.length} parcel${rows.length === 1 ? "" : "s"} ${q ? "matching your search across all auctions" : "in " + selected().label}. ${exact} have a site address on file with the Assessor; the rest show the nearest street from the county's address locator.` : "No parcels match. Try a parcel number like 138-10-510-001 or part of a street name.";
+  const assessor = (p) => `https://maps.clarkcountynv.gov/assessor/AssessorParcelDetail/parceldetail.aspx?hdnParcel=${p.apn.replace(/\D/g, "")}`;
+  const tierOf = (p) => (TIERS.find((t) => p.minBid >= t[0] && p.minBid < t[1]) || TIERS[0])[2];
+  const ratingPill = (p) => `<span class="pill r-${p.dealRating.toLowerCase()}">${p.dealScore} ${p.dealRating}</span>`;
+  const GCOLS = {
+    apn: { label: "Parcel", val: (p) => p.apn, html: (p) => `<a href="${openWeb(p)}" target="_blank" rel="noopener" title="Open on the County OpenWeb map">${esc(p.apn)}</a>` },
+    auction: { label: "Auction", val: (p) => p.auctionDate || "", html: (p) => fmtDate(p.auctionDate, { month: "short", day: undefined }) },
+    status: { label: "Status", val: (p) => p.status, html: (p) => `<span class="pill ${p.status === "Sold" ? "ok" : ""}">${p.status}</span>` },
+    prior: { label: "Prior auctions", num: 1, val: (p) => p.priorAuctions, html: (p) => p.priorAuctions ? `${p.priorAuctions} <span class="muted small">(${esc(p.priorDates.join(", "))})</span>` : "None" },
+    deal: { label: "Deal score", num: 1, val: (p) => p.dealScore, html: ratingPill },
+    address: { label: "Correct address or location", wrap: 1, val: (p) => p.address || p.location, html: (p) => `${esc(p.address || p.location || "Not available")} ${p.address ? (p.addressExact ? "" : '<span class="pill">Approx.</span>') : ""}` },
+    listed: { label: "Listed at auction", wrap: 1, val: (p) => p.location, html: (p) => `<span class="muted">${esc(p.location)}</span>` },
+    area: { label: "Area", val: (p) => p.area, html: (p) => esc(p.area) },
+    type: { label: "Type", val: (p) => p.type, html: (p) => esc(p.type) },
+    owner: { label: "Former owner", wrap: 1, val: (p) => p.owner, html: (p) => esc(p.owner) },
+    owed: { label: "Owed", num: 1, val: (p) => p.minBid, html: (p) => money(p.minBid) },
+    won: { label: "Won", num: 1, val: (p) => p.sold ? p.winningBid : null, html: (p) => p.sold ? money(p.winningBid) : "" },
+    multiple: { label: "Multiple", num: 1, val: (p) => p.multiple, html: (p) => p.multiple ? p.multiple.toFixed(1) + "x" : "" },
+    value: { label: "Assessor value", num: 1, val: (p) => p.taxable, html: (p) => p.taxable ? money(p.taxable) : "" },
+    unpaid: { label: "Yrs unpaid (est.)", num: 1, cond: 1, val: (p) => p.defaultYrs, html: (p) => p.defaultYrs != null ? p.defaultYrs.toFixed(1) : "" },
+    excess: { label: "Excess", num: 1, val: (p) => p.excess || null, html: (p) => p.excess ? money(p.excess) : "" },
+    links: { label: "Open in", nosort: 1, val: () => "", html: (p) => `<span class="links"><a href="${openWeb(p)}" target="_blank" rel="noopener">County map</a> &middot; <a href="${assessor(p)}" target="_blank" rel="noopener">Assessor</a> &middot; <a href="${gmaps(p)}" target="_blank" rel="noopener">Google Maps</a></span>` },
+  };
+  const DEFAULT_ORDER = ["apn", "auction", "status", "prior", "deal", "address", "area", "type", "owed", "won", "multiple", "unpaid", "excess", "links", "listed", "owner", "value"];
+  const DEFAULT_HIDDEN = ["listed", "owner", "value"];
+  const LS = "ccta-grid-v1";
+  let G = { order: DEFAULT_ORDER.slice(), hidden: DEFAULT_HIDDEN.slice(), sort: "deal", dir: -1, pivot: "", pivotSort: "n", pivotDir: -1, filter: null };
+  try { const saved = JSON.parse(localStorage.getItem(LS) || "null"); if (saved && Array.isArray(saved.order)) { G.order = saved.order.filter((k) => GCOLS[k]).concat(DEFAULT_ORDER.filter((k) => !saved.order.includes(k))); G.hidden = saved.hidden || G.hidden; } } catch (e) { /* storage unavailable */ }
+  const saveG = () => { try { localStorage.setItem(LS, JSON.stringify({ order: G.order, hidden: G.hidden })); } catch (e) { /* ignore */ } };
+
+  const PIVOTS = {
+    dealRating: { label: "Deal rating", key: (p) => p.dealRating, order: ["Strong", "Good", "Fair", "Weak"] },
+    type: { label: "Parcel type", key: (p) => p.type, order: TYPES }, area: { label: "Area", key: (p) => p.area },
+    status: { label: "Status", key: (p) => p.status }, year: { label: "Auction year", key: (p) => p.auctionDate ? String(toDate(p.auctionDate).getFullYear()) : "Unknown" },
+    tier: { label: "Cost tier", key: tierOf, order: TIERS.map((t) => t[2]) },
+    priorLabel: { label: "Prior auctions", key: (p) => p.priorAuctions ? `In ${p.priorAuctions} earlier auction${p.priorAuctions > 1 ? "s" : ""}` : "First time at auction" },
+    addrKind: { label: "Address type", key: (p) => !p.address ? "Not available" : p.addressExact ? "Site address" : /^Rural/.test(p.address) ? "Rural (distance from town)" : "Nearest street (approx.)" },
+    warLabel: { label: "Bidding war", key: (p) => !p.sold ? "Not sold" : p.war ? "Bidding war" : "Sold at minimum" },
+  };
+  // Every grid column can be pivoted. Numbers are grouped into ranges; text groups by value.
+  const band = (cuts, fmt, none) => { const labels = cuts.map((c, i) => i === 0 ? `Under ${fmt(c)}` : `${fmt(cuts[i - 1])} to ${fmt(c)}`).concat(`${fmt(cuts[cuts.length - 1])} and up`);
+    return { key: (v) => v == null || v === "" || Number.isNaN(v) ? none : labels[cuts.filter((c) => v >= c).length], order: labels.concat(none) }; };
+  const k$ = (v) => v >= 1e6 ? "$" + (v / 1e6) + "M" : v >= 1000 ? "$" + (v / 1000) + "K" : "$" + v;
+  const B = {
+    won: band([1500, 3000, 7500, 15000, 40000, 100000], k$, "Not sold"),
+    value: band([10000, 50000, 150000, 300000, 600000], k$, "No Assessor value"),
+    excess: band([5000, 25000, 100000], k$, "No excess"),
+    unpaid: band([4, 5, 7, 10], (v) => v + " yrs", "Not recorded"),
+    deal: band([20, 35, 50, 70, 85], (v) => String(v), "No score"),
+  };
+  const multKey = (p) => !p.multiple ? "Not sold" : p.multiple < 1.005 ? "At minimum (1.0x)" : p.multiple < 2 ? "1x to 2x" : p.multiple < 5 ? "2x to 5x" : p.multiple < 10 ? "5x to 10x" : "10x and up";
+  const street = (p) => { const a = (p.address || "").replace(/^Near\s+/i, "").replace(/^Rural land.*$/i, "Rural land").split(",")[0].replace(/^[\d-]+\s+/, "").replace(/\s+(Ut|Unit|Apt|#)\s*\S+$/i, "").trim(); return a || "Not available"; };
+  Object.assign(PIVOTS, {
+    "col:apn": { label: "Parcel book (first 3 digits)", key: (p) => "Book " + p.apn.slice(0, 3) },
+    "col:auction": { label: "Auction", key: (p) => fmtDate(p.auctionDate, { month: "short", day: undefined }) || "Unknown", get order() { return AUCTIONS.slice().sort((a, b) => (a.date || "").localeCompare(b.date || "")).map((a) => fmtDate(a.date, { month: "short", day: undefined })); } },
+    "col:status": { label: "Status", key: (p) => p.status },
+    "col:prior": { label: "Prior auctions", key: PIVOTS.priorLabel.key },
+    "col:deal": { label: "Deal score (range)", key: (p) => B.deal.key(p.dealScore), order: B.deal.order },
+    "col:address": { label: "Street", key: street },
+    "col:listed": { label: "Listed at auction", key: (p) => p.location || "Not listed" },
+    "col:area": { label: "Area", key: (p) => p.area },
+    "col:type": { label: "Type", key: (p) => p.type, order: TYPES },
+    "col:owner": { label: "Former owner", key: (p) => p.owner || "Unknown" },
+    "col:owed": { label: "Owed (cost tier)", key: tierOf, order: TIERS.map((t) => t[2]) },
+    "col:won": { label: "Winning bid (range)", key: (p) => B.won.key(p.sold ? p.winningBid : null), order: B.won.order },
+    "col:multiple": { label: "Multiple of amount owed", key: multKey, order: ["At minimum (1.0x)", "1x to 2x", "2x to 5x", "5x to 10x", "10x and up", "Not sold"] },
+    "col:value": { label: "Assessor value (range)", key: (p) => B.value.key(p.taxable), order: B.value.order },
+    "col:unpaid": { label: "Yrs unpaid (est.)", key: (p) => B.unpaid.key(p.defaultYrs), order: B.unpaid.order },
+    "col:excess": { label: "Excess proceeds (range)", key: (p) => B.excess.key(p.excess || null), order: B.excess.order },
+    "col:links": { label: "Address type", key: PIVOTS.addrKind.key },
+  });
+  const HINT = { apn: "book", deal: "range", address: "street", owed: "cost tier", won: "range", multiple: "range", value: "range", unpaid: "range", excess: "range", links: "address type" };
+  function fillPivotSelect() {
+    const cur = G.pivot;
+    $("pivotBy").innerHTML = `<option value="">None (show parcels)</option><optgroup label="By column">` +
+      G.order.map((k) => `<option value="col:${k}">${esc(GCOLS[k].label)}${HINT[k] ? " (by " + HINT[k] + ")" : ""}</option>`).join("") +
+      `</optgroup><optgroup label="Other groupings"><option value="dealRating">Deal rating</option><option value="year">Auction year</option><option value="warLabel">Bidding war</option></optgroup>`;
+    $("pivotBy").value = PIVOTS[cur] ? cur : "";
+  }
+  function setPivot(v) {
+    G.pivot = v; const P = PIVOTS[v];
+    G.pivotSort = P && P.order ? "name" : "n"; G.pivotDir = P && P.order ? 1 : -1;
+    $("pivotBy").value = v; $("colPanel").hidden = true; saveG(); if (AUCTIONS.length) drawTable();
+  }
+
+  function gridRows() {
+    const q = $("fSearch").value.trim().toLowerCase();
+    const qd = q.replace(/\D/g, "");
+    let rows = selected().parcels.filter((p) => !q || [p.apn, p.owner, p.location, p.address, p.area, p.type, p.status, p.dealRating, p.legal].join(" ").toLowerCase().includes(q) || (qd.length >= 5 && p.apn.replace(/\D/g, "").includes(qd)));
+    if (G.filter) rows = rows.filter((p) => PIVOTS[G.filter.by].key(p) === G.filter.value);
+    return rows;
+  }
+  function visibleCols(rows) {
+    return G.order.filter((k) => !G.hidden.includes(k) && !(GCOLS[k].cond && !rows.some((p) => GCOLS[k].val(p) != null)));
+  }
+  function drawTable() {
+    const rows = gridRows();
+    $("pivotFilter").hidden = !G.filter;
+    if (G.filter) $("pivotFilter").innerHTML = `Showing <b>${esc(PIVOTS[G.filter.by].label)}: ${esc(G.filter.value)}</b> <button type="button" id="clearPivotFilter">Show all</button>`;
+    if (G.filter) $("clearPivotFilter").onclick = () => { G.filter = null; drawTable(); };
+    if (G.pivot) return drawPivot(rows);
+    const cols = visibleCols(rows);
+    const c = GCOLS[G.sort] ? G.sort : "deal";
+    rows.sort((a, b) => { const x = GCOLS[c].val(a), y = GCOLS[c].val(b); if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (typeof x === "number" ? x - y : String(x).localeCompare(String(y))) * G.dir; });
+    const shown = rows.slice(0, 1000);
+    $("parcelTable").innerHTML = `<thead><tr>${cols.map((k) => `<th draggable="true" data-k="${k}" class="${GCOLS[k].num ? "num" : ""}"${G.sort === k ? ` aria-sort="${G.dir > 0 ? "ascending" : "descending"}"` : ""} title="Drag to move; click to sort">${GCOLS[k].label}</th>`).join("")}</tr></thead><tbody>` +
+      shown.map((p, i) => `<tr data-i="${i}">${cols.map((k) => `<td class="${GCOLS[k].num ? "num" : ""}${GCOLS[k].wrap ? " wrap" : ""}">${GCOLS[k].html(p)}</td>`).join("")}</tr>`).join("") + "</tbody>";
+    wireHeaders(cols);
+    $("parcelTable").querySelectorAll("tbody tr").forEach((tr) => tr.addEventListener("click", (e) => { if (e.target.closest("a")) return; showDetail(shown[+tr.dataset.i]); }));
+    const hasUnpaid = cols.includes("unpaid");
+    $("tableNote").textContent = `${rows.length} parcel${rows.length === 1 ? "" : "s"} in ${selected().label}${rows.length > 1000 ? " (first 1,000 shown; download for all)" : ""}. ${hasUnpaid ? '"Yrs unpaid (est.)" = time the county held the parcel in trust plus the 3 years of delinquency required first.' : '"Yrs unpaid" is hidden because the county did not record trust dates for these parcels.'}`;
+    renderColPanel(rows);
+  }
+  function wireHeaders(cols) {
+    let dragK = null;
+    $("parcelTable").querySelectorAll("th").forEach((th) => {
+      th.addEventListener("click", () => { const k = th.dataset.k; if (GCOLS[k].nosort) return; G.dir = G.sort === k ? -G.dir : (GCOLS[k].num ? -1 : 1); G.sort = k; drawTable(); });
+      th.addEventListener("dragstart", (e) => { dragK = th.dataset.k; e.dataTransfer.effectAllowed = "move"; th.classList.add("dragging"); });
+      th.addEventListener("dragend", () => th.classList.remove("dragging"));
+      th.addEventListener("dragover", (e) => { e.preventDefault(); th.classList.add("dropzone"); });
+      th.addEventListener("dragleave", () => th.classList.remove("dropzone"));
+      th.addEventListener("drop", (e) => { e.preventDefault(); const to = th.dataset.k; if (!dragK || dragK === to) return; const o = G.order.filter((k) => k !== dragK); o.splice(o.indexOf(to), 0, dragK); G.order = o; saveG(); drawTable(); });
+    });
+  }
+  function renderColPanel(rows) {
+    fillPivotSelect();
+    $("colPanel").innerHTML = G.order.map((k, i) => {
+      const unavailable = GCOLS[k].cond && !rows.some((p) => GCOLS[k].val(p) != null);
+      return `<div class="colrow"><label><input type="checkbox" data-k="${k}" ${G.hidden.includes(k) ? "" : "checked"} ${unavailable ? "disabled" : ""}> ${GCOLS[k].label}${unavailable ? ' <span class="muted small">(no data)</span>' : ""}</label><span><button type="button" data-pivot="${k}" title="Summarize the grid by this column">Pivot</button><button type="button" data-up="${k}" ${i === 0 ? "disabled" : ""} aria-label="Move up">&#8593;</button><button type="button" data-down="${k}" ${i === G.order.length - 1 ? "disabled" : ""} aria-label="Move down">&#8595;</button></span></div>`;
+    }).join("");
+    $("colPanel").querySelectorAll("input").forEach((cb) => cb.addEventListener("change", () => { const k = cb.dataset.k; G.hidden = cb.checked ? G.hidden.filter((x) => x !== k) : G.hidden.concat(k); saveG(); drawTable(); }));
+    $("colPanel").querySelectorAll("[data-pivot]").forEach((b) => b.addEventListener("click", () => setPivot("col:" + b.dataset.pivot)));
+    $("colPanel").querySelectorAll("[data-up],[data-down]").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.up || b.dataset.down, i = G.order.indexOf(k), j = i + (b.dataset.up ? -1 : 1); [G.order[i], G.order[j]] = [G.order[j], G.order[i]]; saveG(); drawTable(); }));
+  }
+  function drawPivot(rows) {
+    const P = PIVOTS[G.pivot];
+    const groups = {};
+    rows.forEach((p) => (groups[P.key(p)] = groups[P.key(p)] || []).push(p));
+    let names = Object.keys(groups);
+    const stat = (g) => { const s = g.filter((p) => p.sold); return { n: g.length, sold: s.length, owed: avg(g.map((p) => p.minBid)), won: avg(s.map((p) => p.winningBid)), mult: med(s.map((p) => p.multiple)), deal: avg(g.map((p) => p.dealScore)), war: s.length ? s.filter((p) => p.war).length / s.length : null, excess: sum(g.map((p) => p.excess)), prior: g.filter((p) => p.priorAuctions).length } };
+    const S = {}; names.forEach((n) => (S[n] = stat(groups[n])));
+    const pc = [["name", P.label], ["n", "Parcels", 1], ["sold", "Sold", 1], ["owed", "Avg owed", 1], ["won", "Avg winning bid", 1], ["mult", "Median multiple", 1], ["deal", "Avg deal score", 1], ["war", "Bidding wars", 1], ["prior", "Seen at earlier auctions", 1], ["excess", "Total excess", 1]];
+    const k = G.pivotSort;
+    const oi = (o, v) => { const i = o.indexOf(v); return i < 0 ? 999 : i; };
+    names.sort((a, b) => k === "name" ? (P.order ? oi(P.order, a) - oi(P.order, b) || a.localeCompare(b) : a.localeCompare(b, undefined, { numeric: true })) * (G.pivotDir > 0 ? 1 : -1) : ((S[a][k] ?? -1) - (S[b][k] ?? -1)) * G.pivotDir);
+    const fmt = { n: (v) => v, sold: (v) => v, owed: money, won: money, mult: (v) => v ? v.toFixed(1) + "x" : "", deal: (v) => v != null ? Math.round(v) : "", war: (v) => v == null ? "" : pct(v), prior: (v) => v, excess: (v) => v ? money(v) : "" };
+    const tot = stat(rows);
+    $("parcelTable").innerHTML = `<thead><tr>${pc.map((c) => `<th data-k="${c[0]}" class="${c[2] ? "num" : ""}"${k === c[0] ? ` aria-sort="${G.pivotDir > 0 ? "ascending" : "descending"}"` : ""}>${c[1]}</th>`).join("")}</tr></thead><tbody>` +
+      names.map((n) => `<tr data-g="${esc(n)}" class="pivotrow"><td><b>${esc(n)}</b></td>${pc.slice(1).map((c) => `<td class="num">${fmt[c[0]](S[n][c[0]])}</td>`).join("")}</tr>`).join("") +
+      `</tbody><tfoot><tr><td><b>Total</b></td>${pc.slice(1).map((c) => `<td class="num"><b>${fmt[c[0]](tot[c[0]])}</b></td>`).join("")}</tr></tfoot>`;
+    $("parcelTable").querySelectorAll("th").forEach((th) => th.addEventListener("click", () => { const kk = th.dataset.k; G.pivotDir = G.pivotSort === kk ? -G.pivotDir : (kk === "name" ? 1 : -1); G.pivotSort = kk; drawTable(); }));
+    $("parcelTable").querySelectorAll("tbody tr").forEach((tr) => tr.addEventListener("click", () => { G.filter = { by: G.pivot, value: tr.dataset.g }; G.pivot = ""; $("pivotBy").value = ""; drawTable(); $("parcels").scrollIntoView({ behavior: "smooth" }); }));
+    $("tableNote").textContent = `${names.length} group${names.length === 1 ? "" : "s"} across ${rows.length} parcels in ${selected().label}. Click a group to see its parcels.`;
+    renderColPanel(rows);
+  }
+  function csv() {
+    const rows = gridRows();
+    const cols = visibleCols(rows).filter((k) => k !== "links");
+    const extra = [["lat", (p) => p.lat], ["lon", (p) => p.lon], ["county_map", openWeb], ["deal_rating", (p) => p.dealRating]];
+    const csvVal = (k, p) => { const v = GCOLS[k].val(p); if (k === "auction") return (p.auctionDate || "").slice(0, 10); if (typeof v === "number" && !Number.isInteger(v)) return k === "unpaid" ? v.toFixed(1) : v.toFixed(2); return v; };
+    const q = (v) => `"${String(v == null ? "" : v).replace(/"/g, '""')}"`;
+    const lines = [cols.map((k) => GCOLS[k].label).concat(extra.map((e) => e[0])).map(q).join(",")].concat(rows.map((p) => cols.map((k) => csvVal(k, p)).concat(extra.map((e) => e[1](p))).map(q).join(",")));
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    a.download = "clark-county-tax-auction-parcels.csv"; document.body.appendChild(a); a.click(); a.remove();
   }
 
   /* ---------- global search (all auctions, all fields) ---------- */
@@ -318,6 +530,9 @@
     const digits = p.apn.replace(/\D/g, "");
     $("detailBody").innerHTML = `<h2>${esc(p.apn)}</h2><div class="muted">${esc(p.address || p.location)}${p.address && !p.addressExact ? " (approximate)" : ""}</div>
       <div class="dgrid">
+        ${row("Deal score", `${ratingPill(p)} <span class="muted small">value ${p.dealParts.value}/45, type ${p.dealParts.type}/20, location ${p.dealParts.location}/15, signals ${p.dealParts.signals}/10, competition ${p.dealParts.competition}/10</span>`)}
+        ${row("Status", esc(p.status))}
+        ${row("Prior auctions", p.priorAuctions ? p.priorAuctions + " (" + esc(p.priorDates.join(", ")) + ")" : "None")}
         ${row("Auction", fmtDate(p.auctionDate, { weekday: "short", month: "long" }))}
         ${row("Deed recorded", p.deedRecorded ? fmtDate(p.deedRecorded) : "")}
         ${row("Amount owed (minimum bid)", money(p.minBid))}
@@ -337,8 +552,7 @@
         ${row("Assessor taxable value (current)", p.taxable ? money(p.taxable) : "")}
         ${row("Tax district", esc(p.taxDistrict))}
         ${row("County took title in trust", p.trustDate ? fmtDate(p.trustDate) : "")}
-        ${row("Estimated years unpaid", p.defaultYrs != null ? p.defaultYrs.toFixed(1) + " yrs" : "3+ yrs")}
-        ${row("Former owner held it", p.tenure != null ? p.tenure.toFixed(1) + " yrs" : "")}
+        ${row("Estimated years unpaid", p.defaultYrs != null ? p.defaultYrs.toFixed(1) + " yrs" : "")}
         ${row("Personal property", p.personalPropertyExcluded ? "Not included in sale" : "")}
         ${row("Sold as group", esc(p.group || ""))}
       </div>
@@ -390,10 +604,13 @@
       if ($("gSearch").value.trim()) runSearch();
     } catch (e) { $("freshness").textContent = "Could not load data. Please refresh."; console.error(e); }
   }
-  $("fAuction").addEventListener("change", () => { charts.forEach((c) => c.destroy()); charts = []; render(); });
+  $("fAuction").addEventListener("change", () => { G.filter = null; charts.forEach((c) => c.destroy()); charts = []; render(); });
   $("fSearch").addEventListener("input", drawTable);
   $("csvBtn").addEventListener("click", csv);
-  $("lSearch").addEventListener("input", () => { if (AUCTIONS.length) renderLookup(); });
+  $("pivotBy").addEventListener("change", () => setPivot($("pivotBy").value));
+  $("colBtn").addEventListener("click", (e) => { e.stopPropagation(); $("colPanel").hidden = !$("colPanel").hidden; });
+  document.addEventListener("click", (e) => { if (!e.target.closest(".colmenu")) $("colPanel").hidden = true; });
+  $("resetCols").addEventListener("click", () => { G.order = DEFAULT_ORDER.slice(); G.hidden = DEFAULT_HIDDEN.slice(); G.pivot = ""; G.filter = null; $("pivotBy").value = ""; saveG(); drawTable(); });
   load();
   setInterval(load, 30 * 60 * 1000);
 })();

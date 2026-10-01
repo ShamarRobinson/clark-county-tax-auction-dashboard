@@ -12,7 +12,7 @@ Pick any auction (or all of them since 2012) and see:
 - **Cost tiers:** parcels grouped by amount owed (minimum bid) with the average winning bid per tier
 - **Parcel types:** vacant land, single-family, condo/townhouse, manufactured, multi-family, commercial (Assessor land-use codes)
 - **Location:** map of every parcel plus average winning bid and bidding-war rate by area
-- **Parcel location lookup:** the correct site address (or nearest street for unaddressed land) for every parcel, linked straight to the county's OpenWeb map
+- **All parcels grid:** one sortable grid with the correct site address (or nearest street for unaddressed land) linked to the county's OpenWeb map, sold status, prior auctions, estimated years unpaid (when the county recorded it), and a 0 to 100 deal score. Columns can be shown, hidden, dragged to reorder, and pivoted by deal rating, type, area, status, year, cost tier and more
 - **Bidding wars:** how many parcels sold above the minimum and the biggest jumps
 - **Time in default:** estimated years taxes went unpaid (county trustee date + the 3 years required first), how long former owners held the parcels, and how long excess proceeds have gone unclaimed
 
@@ -32,7 +32,7 @@ GitHub Pages serves index.html ──> browser loads auctions.json and renders
 
 ## Auction alerts
 
-`notify.py` runs after each weekly refresh. When the county posts an upcoming auction date it emails an announcement, then one reminder per week until the sale. Recipients and the sending account are stored only as encrypted repository secrets (`ALERT_TO`, `SMTP_USER`, `SMTP_PASS`, optional `SMTP_HOST` / `SMTP_PORT`), never in the code. To test: **Actions > Update auction data > Run workflow**, check "Send a test alert email".
+`notify.py` runs after each weekly refresh. When the county posts an upcoming auction date it emails an announcement, then a weekly update with the auction date and time until the sale. Nothing else is emailed. Recipients and the sending account are stored only as encrypted repository secrets (`ALERT_TO`, `SMTP_USER`, `SMTP_PASS`, optional `SMTP_HOST` / `SMTP_PORT`), never in the code. To test: **Actions > Update auction data > Run workflow**, check "Send a test alert email".
 
 ## Run locally
 
